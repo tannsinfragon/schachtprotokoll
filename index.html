@@ -1,0 +1,628 @@
+<!--
+    Schachtprotokoll Abwasser v2.5.0
+    Originalautor: Andreas Blaser
+    Erweitert von: Severin Tanner
+    Letztes Update: 16.03.2026
+-->
+<!DOCTYPE html>
+<html lang="de">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Schachtprotokoll Abwasser">
+    <meta name="theme-color" content="#1e2a3a">
+    <link rel="manifest" href="./manifest.json">
+    <link rel="stylesheet" href="./schacht.css">
+    <title>Schachtprotokoll</title>
+</head>
+
+<body>
+
+    <!-- ── Navigationsleiste ── -->
+    <nav id="hauptnav">
+        <div class="nav-logo">
+            <img src="assets/logo.png" alt="Logo" class="nav-logo-img">
+            <span class="nav-titel">Schachtprotokoll Abwasser<span class="nav-version">v2.5.0</span></span>
+        </div>
+        <div class="nav-aktionen">
+            <button type="button" data-action="neuer-schacht">NEU</button>
+            <button type="button" data-action="schachtliste-oeffnen">SCHÄCHTE</button>
+            <button type="button" data-action="print-pdf">PDF</button>
+        </div>
+    </nav>
+
+    <div id="offline-banner"></div>
+
+    <div id="erfassungsumfang" class="container erfassungsumfang-leiste">
+        <h3 class="section-titel">Erfassungsumfang</h3>
+        <form action="" class="umfang-grid">
+            <div class="umfang-fix">Allgemein</div>
+            <label class="umfang-toggle" for="umfang_deckel">
+                <input type="checkbox" id="umfang_deckel" data-umfang="deckel" checked>
+                <span>Deckel</span>
+            </label>
+            <label class="umfang-toggle" for="umfang_schacht">
+                <input type="checkbox" id="umfang_schacht" data-umfang="schacht" checked>
+                <span>Schacht</span>
+            </label>
+            <label class="umfang-toggle" for="umfang_leitungen">
+                <input type="checkbox" id="umfang_leitungen" data-umfang="leitungen" checked>
+                <span>Leitungen</span>
+            </label>
+            <label class="umfang-toggle" for="umfang_zustand">
+                <input type="checkbox" id="umfang_zustand" data-umfang="zustand">
+                <span>Zustand</span>
+            </label>
+        </form>
+    </div>
+
+    <div class="hauptinhalt">
+
+        <!-- Allgemein -->
+        <div id="schachtdaten" class="container">
+            <h3 class="section-titel">Allgemein</h3>
+            <form action="">
+                <div class="feld-zeile">
+                    <div class="feld">
+                        <label class="feldname" for="gemeinde">Gemeinde</label>
+                        <input type="text" id="gemeinde" placeholder="Gemeinde">
+                    </div>
+                    <div class="feld">
+                        <label class="feldname" for="strasse">Strasse / Ort</label>
+                        <input type="text" id="strasse" placeholder="Strasse / Ort">
+                    </div>
+                </div>
+                <div class="feld-zeile">
+                    <div class="feld">
+                        <label class="feldname" for="nummer">Schacht-Nr.</label>
+                        <input type="text" id="nummer" placeholder="Schacht-Nr.">
+                    </div>
+                    <div class="feld">
+                        <label class="feldname" for="parzelle">Parzellen-Nr.</label>
+                        <input type="text" id="parzelle" placeholder="Parzellen-Nr.">
+                    </div>
+                </div>
+                <div class="feld-zeile">
+                    <div class="feld">
+                        <label class="feldname" for="aufnahmedatum">Aufnahmedatum</label>
+                        <input type="date" id="aufnahmedatum" placeholder="Aufnahmedatum">
+                    </div>
+                    <div class="feld">
+                        <label class="feldname" for="visum">Visum / Kürzel</label>
+                        <input type="text" id="visum" placeholder="Visum / Kürzel">
+                    </div>
+                </div>
+                <div class="feld">
+                    <label class="feldname" for="notiz">Bemerkungen</label>
+                    <input type="text" id="notiz" placeholder="Bemerkungen">
+                </div>
+                <div class="feld-zeile">
+                    <div class="feld">
+                        <label class="feldname" for="koordinaten_e">Koordinaten E (LV95)</label>
+                        <input type="text" id="koordinaten_e" placeholder="2'600'000" inputmode="numeric">
+                    </div>
+                    <div class="feld">
+                        <label class="feldname" for="koordinaten_n">Koordinaten N (LV95)</label>
+                        <input type="text" id="koordinaten_n" placeholder="1'200'000" inputmode="numeric">
+                    </div>
+                    <div class="feld">
+                        <label class="feldname" for="koordinaten_z">H Koord (m ü. M.)</label>
+                        <input type="text" id="koordinaten_z" placeholder="450.00" inputmode="decimal">
+                    </div>
+                </div>
+            </form>
+        </div>
+
+        <!-- Deckel -->
+        <div id="deckelbereich" class="container">
+            <h3 class="section-titel">Deckel</h3>
+            <form action="">
+                <div class="feld-zeile">
+                    <div class="feld">
+                        <label class="feldname" for="deckel_form">Form</label>
+                        <select id="deckel_form">
+                            <option value="" disabled selected hidden>Form</option>
+                            <option value="">-</option>
+                            <option value="Rund">Rund</option>
+                            <option value="Eckig">Eckig</option>
+                        </select>
+                    </div>
+                    <div class="feld">
+                        <label class="feldname" for="deckel_dm">Durchmesser</label>
+                        <select id="deckel_dm">
+                            <option value="" disabled selected hidden>Durchmesser</option>
+                            <option value="">-</option>
+                            <option value="400">400</option>
+                            <option value="600">600</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="feld-zeile">
+                    <div class="feld">
+                        <label class="feldname" for="deckel_material">Material</label>
+                        <select id="deckel_material">
+                            <option value="" disabled selected hidden>Material</option>
+                            <option value="">-</option>
+                            <option value="Guss">Guss</option>
+                            <option value="Guss mit Betonfüllung">GuBe</option>
+                            <option value="Guss mit Betonfüllung (beflüftet)">GuBe (beflüftet)</option>
+                            <option value="Beton">Beton</option>
+                            <option value="Keiner">Keiner</option>
+                        </select>
+                    </div>
+                    <div class="feld">
+                        <label class="feldname" for="deckel_verschluss">Verschluss</label>
+                        <select id="deckel_verschluss">
+                            <option value="" disabled selected hidden>Verschluss</option>
+                            <option value="">-</option>
+                            <option value="Keiner">Keiner</option>
+                            <option value="Verschraubt">Verschraubt</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="feld-zeile">
+                    <div class="feld">
+                        <label class="feldname" for="deckel_oberflaechenzulauf">Oberflächenzulauf</label>
+                        <select id="deckel_oberflaechenzulauf">
+                            <option value="" disabled selected hidden>Oberflächenzulauf</option>
+                            <option value="">-</option>
+                            <option value="Ja">Ja</option>
+                            <option value="Nein">Nein</option>
+                        </select>
+                    </div>
+                    <div class="feld">
+                        <label class="feldname" for="deckel_zugaenglichkeit">Zugänglichkeit</label>
+                        <select id="deckel_zugaenglichkeit">
+                            <option value="" disabled selected hidden>Zugänglichkeit</option>
+                            <option value="">-</option>
+                            <option value="Zugänglich">Zugänglich</option>
+                            <option value="Unzugänglich">Unzugänglich</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="feld-zeile">
+                    <div class="feld">
+                        <label class="feldname" for="deckel_baujahr">Baujahr</label>
+                        <input type="text" id="deckel_baujahr" placeholder="Baujahr" inputmode="numeric">
+                    </div>
+                    <div class="feld"></div>
+                </div>
+            </form>
+        </div>
+
+        <!-- Schacht -->
+        <div id="schachtangaben" class="container">
+            <h3 class="section-titel">Schacht</h3>
+            <form action="">
+                <div class="feld-zeile">
+                    <div class="feld">
+                        <label class="feldname" for="schacht_typ">Schachttyp</label>
+                        <select id="schacht_typ">
+                            <option value="" disabled selected hidden>Schachttyp</option>
+                            <option value="">-</option>
+                            <option value="Kontrollschacht">Kontrollschacht</option>
+                            <option value="Schlammsammler">Schlammsammler</option>
+                            <option value="Einlaufschacht">Einlaufschacht</option>
+                            <option value="Benz.-Ölabscheider">Benz.-/Ölabscheider</option>
+                            <option value="Sonderbauwerk">Sonderbauwerk</option>
+                        </select>
+                    </div>
+                    <div class="feld">
+                        <label class="feldname" for="schacht_material">Material</label>
+                        <select id="schacht_material">
+                            <option value="" disabled selected hidden>Material</option>
+                            <option value="">-</option>
+                            <option value="Beton">Beton</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="feld-zeile">
+                    <div class="feld">
+                        <label class="feldname" for="schacht_dim">Dimension</label>
+                        <select id="schacht_dim">
+                            <option value="" disabled selected hidden>Dimension</option>
+                            <option value="">-</option>
+                            <option value="600">600</option>
+                            <option value="800">800</option>
+                            <option value="1000">1000</option>
+                            <option value="900/1100">900/1100 (oval)</option>
+                            <option value="1200/1500">1200/1500 (oval)</option>
+                            <option value="eckig">eckig</option>
+                        </select>
+                    </div>
+                    <div class="feld">
+                        <label class="feldname" for="schacht_sohle">Sohle D- (cm)</label>
+                        <input type="text" id="schacht_sohle" placeholder="Sohle D- (cm)" inputmode="decimal">
+                    </div>
+                </div>
+                <div class="feld-zeile">
+                    <div class="feld">
+                        <label class="feldname" for="schacht_einstieg">Einstieg</label>
+                        <select id="schacht_einstieg">
+                            <option value="" disabled selected hidden>Einstieg</option>
+                            <option value="">-</option>
+                            <option value="Leiter">Leiter vorhanden</option>
+                            <option value="Kein Einstieg">Kein Einstieg</option>
+                        </select>
+                    </div>
+                    <div class="feld">
+                        <label class="feldname" for="schacht_eigentuemer">Eigentümer</label>
+                        <select id="schacht_eigentuemer">
+                            <option value="" disabled selected hidden>Eigentümer</option>
+                            <option value="">-</option>
+                            <option value="Privat">Privat</option>
+                            <option value="Gemeinde">Gemeinde</option>
+                            <option value="Kanton">Kanton</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="feld-zeile">
+                    <div class="feld">
+                        <label class="feldname" for="schacht_baujahr">Baujahr</label>
+                        <input type="text" id="schacht_baujahr" placeholder="Baujahr" inputmode="numeric">
+                    </div>
+                    <div class="feld">
+                        <label class="feldname" for="zustand">Zustand</label>
+                        <select id="zustand">
+                            <option value="" disabled selected hidden>Zustand</option>
+                            <option value="">-</option>
+                            <option value="Keine Mängel">Keine Mängel</option>
+                            <option value="Leichte Mängel">Leichte Mängel</option>
+                            <option value="Mittlere Mängel">Mittlere Mängel</option>
+                            <option value="Starke Mängel">Starke Mängel</option>
+                        </select>
+                    </div>
+                </div>
+            </form>
+        </div>
+
+        <!-- Leitungen -->
+        <div class="container" id="leitungsdaten">
+            <h3 class="section-titel">Leitungen</h3>
+            <menu>
+                <label data-action="neue-leitung" role="button" tabindex="0">+ LEITUNG</label>
+            </menu>
+            <div class="tabelle-scroll">
+                <table id="tblleitungen">
+                    <thead>
+                        <tr>
+                            <th>Nr</th>
+                            <th>Richtung</th>
+                            <th>D-</th>
+                            <th>Profil</th>
+                            <th>Material</th>
+                            <th>NW</th>
+                            <th>Funktion</th>
+                            <th>Art</th>
+                            <th>Betrieb</th>
+                            <th>Hydraulik</th>
+                            <th>Notiz</th>
+                            <th class="col-aktion"></th>
+                            <th class="col-aktion"></th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+            <p id="leitungenLeer" class="empty-state">Keine Leitungen erfasst</p>
+        </div>
+
+        <!-- Zustand -->
+        <div class="container" id="zustandsbereich">
+            <h3 class="section-titel">Zustand</h3>
+            <div class="zustand-tabelle-scroll">
+                <table class="zustand-tabelle">
+                    <tbody>
+                        <tr data-zustand-gruppe="schacht">
+                            <th scope="row">Schacht</th>
+                            <td><label><input type="checkbox" data-zustand-option="keine_mangel" data-exklusiv="true"> keine Mängel</label></td>
+                            <td><label><input type="checkbox" data-zustand-option="uberdeckt"> überdeckt</label></td>
+                            <td><label><input type="checkbox" data-zustand-option="kann_nicht_geoffnet_werden"> kann nicht geöffnet werden</label></td>
+                        </tr>
+                        <tr data-zustand-gruppe="schachtdeckel">
+                            <th scope="row">Schachtdeckel</th>
+                            <td><label><input type="checkbox" data-zustand-option="keine_mangel" data-exklusiv="true"> keine Mängel</label></td>
+                            <td><label><input type="checkbox" data-zustand-option="verschraubt"> verschraubt</label></td>
+                            <td><label><input type="checkbox" data-zustand-option="defekt"> defekt</label></td>
+                        </tr>
+                        <tr data-zustand-gruppe="schachtdeckelrahmen">
+                            <th scope="row">Schachtdeckelrahmen</th>
+                            <td><label><input type="checkbox" data-zustand-option="keine_mangel" data-exklusiv="true"> keine Mängel</label></td>
+                            <td><label><input type="checkbox" data-zustand-option="mangelhaft_untermortelt"> mangelhaft untermörtelt</label></td>
+                            <td><label><input type="checkbox" data-zustand-option="gerissen"> gerissen</label></td>
+                            <td><label><input type="checkbox" data-zustand-option="lose"> lose</label></td>
+                            <td><label><input type="checkbox" data-zustand-option="versetzt"> versetzt</label></td>
+                        </tr>
+                        <tr data-zustand-gruppe="schachthals">
+                            <th scope="row">Schachthals<br><small>(unter Rahmen)</small></th>
+                            <td><label><input type="checkbox" data-zustand-option="keine_mangel" data-exklusiv="true"> keine Mängel</label></td>
+                            <td><label><input type="checkbox" data-zustand-option="schlecht_verputzt"> schlecht verputzt</label></td>
+                            <td><label><input type="checkbox" data-zustand-option="ausgebrochen"> ausgebrochen</label></td>
+                            <td><label><input type="checkbox" data-zustand-option="gerissen"> gerissen</label></td>
+                            <td><label><input type="checkbox" data-zustand-option="versetzt"> versetzt</label></td>
+                        </tr>
+                        <tr data-zustand-gruppe="schachtrohr">
+                            <th scope="row">Schachtrohr<br><small>(inkl. Konus)</small></th>
+                            <td><label><input type="checkbox" data-zustand-option="keine_mangel" data-exklusiv="true"> keine Mängel</label></td>
+                            <td><label><input type="checkbox" data-zustand-option="fugen_schlecht_verputzt"> Fugen schlecht verputzt</label></td>
+                            <td><label><input type="checkbox" data-zustand-option="ausgebrochen"> ausgebrochen</label></td>
+                            <td><label><input type="checkbox" data-zustand-option="gerissen"> gerissen</label></td>
+                            <td><label><input type="checkbox" data-zustand-option="versetzt"> versetzt</label></td>
+                        </tr>
+                        <tr data-zustand-gruppe="steigleiter_steigeisen">
+                            <th scope="row">Steigleiter / Steigeisen</th>
+                            <td><label><input type="checkbox" data-zustand-option="keine_mangel" data-exklusiv="true"> keine Mängel</label></td>
+                            <td><label><input type="checkbox" data-zustand-option="verrostet"> verrostet</label></td>
+                            <td><label><input type="checkbox" data-zustand-option="fehlt"> fehlt</label></td>
+                        </tr>
+                        <tr data-zustand-gruppe="bankett_durchlaufrinne">
+                            <th scope="row">Bankett / Durchlaufrinne</th>
+                            <td><label><input type="checkbox" data-zustand-option="keine_mangel" data-exklusiv="true"> keine Mängel</label></td>
+                            <td><label><input type="checkbox" data-zustand-option="ausgewaschen"> ausgewaschen</label></td>
+                            <td><label><input type="checkbox" data-zustand-option="kein_bankett"> kein Bankett</label></td>
+                            <td><label><input type="checkbox" data-zustand-option="schlecht_ausgebildet"> schlecht ausgebildet</label></td>
+                            <td><label><input type="checkbox" data-zustand-option="ausgebrochen"> ausgebrochen</label></td>
+                        </tr>
+                        <tr data-zustand-gruppe="grundwassereinbruch">
+                            <th scope="row">Grundwassereinbruch</th>
+                            <td><label><input type="checkbox" data-zustand-option="keine_mangel" data-exklusiv="true"> keine Mängel</label></td>
+                            <td><label><input type="checkbox" data-zustand-option="bankett"> Bankett</label></td>
+                            <td><label><input type="checkbox" data-zustand-option="sohle"> Sohle</label></td>
+                            <td><label><input type="checkbox" data-zustand-option="schachtrohr"> Schachtrohr</label></td>
+                        </tr>
+                        <tr data-zustand-gruppe="anschlusse">
+                            <th scope="row">Anschlüsse</th>
+                            <td><label><input type="checkbox" data-zustand-option="keine_mangel" data-exklusiv="true"> keine Mängel</label></td>
+                            <td><label><input type="checkbox" data-zustand-option="verkalkt"> verkalkt</label></td>
+                            <td><label><input type="checkbox" data-zustand-option="schlecht_eingefuhrt"> schlecht eingeführt</label></td>
+                            <td><label><input type="checkbox" data-zustand-option="nicht_verputzt"> nicht verputzt</label></td>
+                            <td><label><input type="checkbox" data-zustand-option="wurzeleinwuchs"> Wurzeleinwuchs</label></td>
+                        </tr>
+                        <tr data-zustand-gruppe="einlauf_hauptleitung">
+                            <th scope="row">Einlauf (Hauptleitung)</th>
+                            <td><label><input type="checkbox" data-zustand-option="keine_mangel" data-exklusiv="true"> keine Mängel</label></td>
+                            <td><label><input type="checkbox" data-zustand-option="verkalkt"> verkalkt</label></td>
+                            <td><label><input type="checkbox" data-zustand-option="undicht"> undicht</label></td>
+                            <td><label><input type="checkbox" data-zustand-option="nicht_verputzt"> nicht verputzt</label></td>
+                            <td><label><input type="checkbox" data-zustand-option="wurzeleinwuchs"> Wurzeleinwuchs</label></td>
+                        </tr>
+                        <tr data-zustand-gruppe="auslauf_hauptleitung">
+                            <th scope="row">Auslauf (Hauptleitung)</th>
+                            <td><label><input type="checkbox" data-zustand-option="keine_mangel" data-exklusiv="true"> keine Mängel</label></td>
+                            <td><label><input type="checkbox" data-zustand-option="verkalkt"> verkalkt</label></td>
+                            <td><label><input type="checkbox" data-zustand-option="undicht"> undicht</label></td>
+                            <td><label><input type="checkbox" data-zustand-option="nicht_verputzt"> nicht verputzt</label></td>
+                            <td><label><input type="checkbox" data-zustand-option="wurzeleinwuchs"> Wurzeleinwuchs</label></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Canvas + Foto nebeneinander -->
+        <div class="media-zeile" id="medienbereich">
+
+            <!-- Zeichenfläche -->
+            <div class="container" id="skizzebereich">
+                <h3 class="section-titel">Skizze</h3>
+                <menu>
+                    <label id="black"  data-stift title="Schwarz" role="button" tabindex="0">✎</label>
+                    <label id="red"    data-stift title="Rot" role="button" tabindex="0">✎</label>
+                    <label id="violet" data-stift title="Violett" role="button" tabindex="0">✎</label>
+                    <label id="blue"   data-stift title="Blau" role="button" tabindex="0">✎</label>
+                    <label id="green"  data-stift title="Grün" role="button" tabindex="0">✎</label>
+                    <label id="white"  data-stift title="Radierer" role="button" tabindex="0">⌫</label>
+                    <label data-action="undo" title="Rückgängig (Strg+Z)" role="button" tabindex="0">↩</label>
+                </menu>
+                <canvas id="canvas" height="320" width="320" title="Skizze · Schacht / Bauwerk · Einläufe / Ausläufe · Anschluss-Nr."></canvas>
+                <div class="grundriss">
+                    <button id="gitter" type="button">Gitter</button>
+                    <button id="skizze" type="button">Skizze</button>
+                </div>
+                <p class="skizze-hinweis">Sonderbauwerke möglichst genau skizzieren, beschriften · Foto, Funktion</p>
+            </div>
+
+            <!-- Fotos -->
+            <div class="container" id="fotobereich">
+                <h3 class="section-titel">Fotos <small id="fotoZaehler">0/3</small></h3>
+                <menu>
+                    <label for="input" id="kamera-label">Foto hinzufügen</label>
+                    <input type="file" id="input" accept="image/*" hidden>
+                </menu>
+                <div id="fotos" class="fotos-container"></div>
+            </div>
+
+        </div><!-- /media-zeile -->
+
+    </div><!-- /hauptinhalt -->
+
+    <!-- ── Schächte-Liste Panel ── -->
+    <div id="schachtListe" class="panel">
+        <div class="panel-kopf">
+            <h3>Gespeicherte Schächte</h3>
+            <button type="button" data-action="schachtliste-schliessen" title="Schliessen">✕</button>
+        </div>
+        <div class="panel-inhalt">
+            <table id="schachtListeTabelle">
+                <thead>
+                    <tr>
+                        <th>Datum</th>
+                        <th>Gemeinde</th>
+                        <th>Strasse</th>
+                        <th>Nr</th>
+                        <th>Typ</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
+        <div class="panel-footer">
+            <div class="panel-daten-gruppe">
+                <span class="panel-daten-label">Exportieren</span>
+                <button type="button" data-action="export-json">JSON</button>
+                <button type="button" data-action="export-csv">CSV</button>
+                <button type="button" data-action="export-xml">XML</button>
+                <button type="button" data-action="export-bilder">Bilder ZIP</button>
+                <button type="button" data-action="export-alle-pdf">Alle PDF</button>
+            </div>
+            <div class="panel-daten-gruppe">
+                <span class="panel-daten-label">Importieren</span>
+                <button type="button" data-action="import-json">JSON</button>
+                <input type="file" id="importDateiJSON" accept=".json" style="display:none"
+                       >
+                <button type="button" data-action="import-csv">CSV</button>
+                <input type="file" id="importDateiCSV" accept=".csv" style="display:none"
+                       >
+                <button type="button" data-action="import-xml">XML</button>
+                <input type="file" id="importDateiXML" accept=".xml" style="display:none"
+                       >
+            </div>
+            <div class="panel-daten-gruppe panel-daten-gefahr">
+                <span class="panel-daten-label">Cache</span>
+                <button type="button" data-action="alle-schachte-loeschen" class="btn-gefahr">Alle löschen</button>
+            </div>
+        </div>
+    </div>
+    <div id="panelOverlay" class="panel-overlay" data-action="schachtliste-schliessen" style="display:none"></div>
+
+    <!-- ── Dialog: Leitung erfassen ── -->
+    <dialog id="ltgDialog">
+        <div class="container">
+            <h3 id="ltgDialogTitel" class="dialog-titel">Leitung erfassen</h3>
+            <menu>
+                <label data-action="close-dialog" role="button" tabindex="0">ABBRECHEN</label>
+                <label data-action="speichern-leitung" role="button" tabindex="0">SPEICHERN</label>
+            </menu>
+            <form method="dialog" class="dialog-form">
+
+                <!-- Richtung -->
+                <div class="dialog-gruppe">
+                    <label class="dialog-label">Richtung</label>
+                    <select id="ltg_richtung">
+                        <option value="Einlauf">Einlauf</option>
+                        <option value="Auslauf">Auslauf</option>
+                        <option value="Überlauf">Überlauf</option>
+                    </select>
+                </div>
+
+                <!-- Dimension & Profil -->
+                <div class="dialog-gruppe">
+                    <label class="dialog-label">Dimension & Profil</label>
+                    <div class="feld-zeile">
+                        <input type="text" id="tiefe" placeholder="D- Tiefe (m)" inputmode="decimal">
+                        <select id="ltg_profil">
+                            <option value="" disabled selected hidden>Profil</option>
+                            <option value="">-</option>
+                            <option value="Kreis">Kreis</option>
+                            <option value="Offenes Profil">Offenes Profil (Rinne)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Material & NW -->
+                <div class="dialog-gruppe">
+                    <label class="dialog-label">Material &amp; Nennweite</label>
+                    <div class="feld-zeile">
+                        <select id="rmat">
+                            <option value="" disabled selected hidden>Material</option>
+                            <option value="">-</option>
+                            <option value="PE">PE – Polyethylen</option>
+                            <option value="PP">PP – Polypropylen</option>
+                            <option value="PVC">PVC – Polyvinylchlorid</option>
+                            <option value="FZ">FZ – Faserzementrohr</option>
+                            <option value="Z">Z – Zementrohr</option>
+                            <option value="SBR">SBR – Schleuderbetonrohr</option>
+                            <option value="ST">ST – Stahl</option>
+                            <option value="Beton">Beton</option>
+                            <option value="Andere">Andere</option>
+                        </select>
+                        <input type="text" list="lrdm" id="rdm" placeholder="NW (mm)" inputmode="numeric">
+                    </div>
+                    <datalist id="lrdm">
+                        <option value="90"/><option value="100"/><option value="125"/>
+                        <option value="150"/><option value="200"/><option value="250"/>
+                        <option value="300"/><option value="350"/><option value="400"/>
+                        <option value="500"/><option value="600"/><option value="800"/>
+                        <option value="1000"/>
+                    </datalist>
+                </div>
+
+                <!-- Funktion -->
+                <div class="dialog-gruppe">
+                    <label class="dialog-label">Funktion</label>
+                    <select id="ltg_funktion">
+                        <option value="" disabled selected hidden>Funktion</option>
+                        <option value="">-</option>
+                        <option value="Hauptsammelkanal">Hauptsammelkanal</option>
+                        <option value="Sammelkanal">Sammelkanal</option>
+                        <option value="Liegenschaftsentwässerung">Liegenschaftsentwässerung</option>
+                        <option value="Strassentwässerung">Strassentwässerung</option>
+                    </select>
+                </div>
+
+                <!-- Art & Betrieb -->
+                <div class="dialog-gruppe">
+                    <label class="dialog-label">Art &amp; Betrieb</label>
+                    <div class="feld-zeile">
+                        <select id="ltg_art">
+                            <option value="" disabled selected hidden>Art</option>
+                            <option value="">-</option>
+                            <option value="Regenwasser">Regenwasser</option>
+                            <option value="Schmutzwasser">Schmutzwasser</option>
+                            <option value="Mischwasser">Mischwasser</option>
+                        </select>
+                        <select id="ltg_betrieb">
+                            <option value="" disabled selected hidden>Betrieb</option>
+                            <option value="">-</option>
+                            <option value="In Betrieb">In Betrieb</option>
+                            <option value="Ausser Betrieb">Ausser Betrieb</option>
+                            <option value="Reserve">Reserve</option>
+                            <option value="Provisorisch">Provisorisch</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Hydraulik -->
+                <div class="dialog-gruppe">
+                    <label class="dialog-label">Hydraulik</label>
+                    <select id="ltg_hydraulik">
+                        <option value="" disabled selected hidden>Hydraulik</option>
+                        <option value="">-</option>
+                        <option value="Freispiegelleitung">Freispiegelleitung</option>
+                        <option value="Sickerleitung">Sickerleitung</option>
+                        <option value="Pumpendruckleitung">Pumpendruckleitung</option>
+                    </select>
+                </div>
+
+                <!-- Notiz -->
+                <div class="dialog-gruppe">
+                    <label class="dialog-label">Notiz / Besonderes</label>
+                    <input type="text" id="lnotiz" placeholder="z.B. Trockenwetterfallrohr, Durchmesser eintragen">
+                </div>
+
+                <p class="pflicht-hinweis">Leitungen erhalten eine fortlaufende Nummer</p>
+            </form>
+        </div>
+    </dialog>
+
+    <!-- ── Bestätigungs-Dialog ── -->
+    <dialog id="confirmDialog" class="confirm-dialog">
+        <p id="confirmFrage"></p>
+        <div class="confirm-aktionen">
+            <button id="confirmNein" class="btn-confirm-nein">Nein</button>
+            <button id="confirmJa"   class="btn-confirm-ja">Ja</button>
+        </div>
+    </dialog>
+
+    <!-- ── Status-Bar & Toast ── -->
+    <div id="statusbar" class="statusbar"><span class="statusbar-copyright">&copy; Andreas Blaser / Severin Tanner</span><span id="speicherstatus" class="speicherstatus speicherstatus--pruefen">Speicherprüfung</span><span id="statusbar-text">Bereit</span></div>
+    <div id="toast" class="toast"></div>
+
+    <script src="./assets/js/app-config.js"></script>
+    <script src="./assets/js/csv-tools.js"></script>
+    <script src="./assets/vendor/zip-writer.js"></script>
+    <script src="./script.js"></script>
+</body>
+</html>
