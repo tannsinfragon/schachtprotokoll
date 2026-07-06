@@ -1,5 +1,5 @@
 <!--
-    Schachtprotokoll Abwasser v2.5.0
+    Schachtprotokoll Abwasser
     Originalautor: Andreas Blaser
     Erweitert von: Severin Tanner
     Letztes Update: 16.03.2026
@@ -27,7 +27,7 @@
     <nav id="hauptnav">
         <div class="nav-logo">
             <img src="assets/logo.png" alt="Logo" class="nav-logo-img">
-            <span class="nav-titel">Schachtprotokoll Abwasser<span class="nav-version">v2.5.0</span></span>
+            <span class="nav-titel">Schachtprotokoll Abwasser<span class="nav-version"></span></span>
         </div>
         <div class="nav-aktionen">
             <button type="button" data-action="neuer-schacht">NEU</button>
@@ -423,16 +423,18 @@
                 <div class="grundriss">
                     <button id="gitter" type="button">Gitter</button>
                     <button id="skizze" type="button">Skizze</button>
+                    <button id="zeichnen_freihand" type="button">Freihand</button>
+                    <button id="zeichnen_korrektur" type="button" class="aktiv">Korrektur</button>
                 </div>
-                <p class="skizze-hinweis">Sonderbauwerke möglichst genau skizzieren, beschriften · Foto, Funktion</p>
+                <p class="skizze-hinweis">Sonderbauwerke möglichst genau skizzieren, beschriften</p>
             </div>
 
             <!-- Fotos -->
             <div class="container" id="fotobereich">
-                <h3 class="section-titel">Fotos <small id="fotoZaehler">0/3</small></h3>
+                <h3 class="section-titel">Fotos <small id="fotoZaehler">0</small></h3>
                 <menu>
                     <label for="input" id="kamera-label">Foto hinzufügen</label>
-                    <input type="file" id="input" accept="image/*" hidden>
+                    <input type="file" id="input" accept="image/*" multiple hidden>
                 </menu>
                 <div id="fotos" class="fotos-container"></div>
             </div>
@@ -466,21 +468,13 @@
             <div class="panel-daten-gruppe">
                 <span class="panel-daten-label">Exportieren</span>
                 <button type="button" data-action="export-json">JSON</button>
-                <button type="button" data-action="export-csv">CSV</button>
-                <button type="button" data-action="export-xml">XML</button>
-                <button type="button" data-action="export-bilder">Bilder ZIP</button>
-                <button type="button" data-action="export-alle-pdf">Alle PDF</button>
+                <button type="button" data-action="export-bilder">Bilder</button>
+                <button type="button" data-action="export-alle-pdf">PDF</button>
             </div>
             <div class="panel-daten-gruppe">
                 <span class="panel-daten-label">Importieren</span>
                 <button type="button" data-action="import-json">JSON</button>
                 <input type="file" id="importDateiJSON" accept=".json" style="display:none"
-                       >
-                <button type="button" data-action="import-csv">CSV</button>
-                <input type="file" id="importDateiCSV" accept=".csv" style="display:none"
-                       >
-                <button type="button" data-action="import-xml">XML</button>
-                <input type="file" id="importDateiXML" accept=".xml" style="display:none"
                        >
             </div>
             <div class="panel-daten-gruppe panel-daten-gefahr">
@@ -621,11 +615,10 @@
     </dialog>
 
     <!-- ── Status-Bar & Toast ── -->
-    <div id="statusbar" class="statusbar"><span class="statusbar-copyright">&copy; Andreas Blaser / Severin Tanner</span><span id="speicherstatus" class="speicherstatus speicherstatus--pruefen">Speicherprüfung</span><span id="statusbar-text">Bereit</span></div>
+    <div id="statusbar" class="statusbar"><span class="statusbar-copyright">&copy; Andreas Blaser / Severin Tanner</span><span id="speicherstatus" class="speicherstatus speicherstatus--checking">Speicherprüfung</span><span id="statusbar-text">Bereit</span></div>
     <div id="toast" class="toast"></div>
 
     <script src="./assets/js/app-config.js"></script>
-    <script src="./assets/js/csv-tools.js"></script>
     <script src="./assets/vendor/zip-writer.js"></script>
     <script src="./script.js"></script>
 </body>

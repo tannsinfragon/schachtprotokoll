@@ -49,8 +49,12 @@ const DB = (() => {
             // id muss entweder eine gültige Zahl sein oder ganz fehlen (für autoIncrement)
             const isNew = !schacht.id;
             if (isNew) delete schacht.id;
+            let gespeicherteId = schacht.id;
+            tx.oncomplete = () => resolve(gespeicherteId);
+            tx.onerror = () => reject(tx.error || new Error('Speichern fehlgeschlagen'));
+            tx.onabort = () => reject(tx.error || new Error('Speichern abgebrochen'));
             const req = isNew ? store.add(schacht) : store.put(schacht);
-            req.onsuccess = e => resolve(e.target.result);
+            req.onsuccess = e => { gespeicherteId = e.target.result; };
             req.onerror = e => reject(e.target.error);
         });
     }
@@ -79,8 +83,10 @@ const DB = (() => {
         const db = await open();
         return new Promise((resolve, reject) => {
             const tx = db.transaction(STORE, 'readwrite');
+            tx.oncomplete = () => resolve();
+            tx.onerror = () => reject(tx.error || new Error('Löschen fehlgeschlagen'));
+            tx.onabort = () => reject(tx.error || new Error('Löschen abgebrochen'));
             const req = tx.objectStore(STORE).delete(id);
-            req.onsuccess = () => resolve();
             req.onerror = e => reject(e.target.error);
         });
     }
@@ -215,6 +221,7 @@ const Sketch = (() => {
     let strokePoints = [];
     let preStrokeImageData = null;  // Canvas-Zustand vor dem aktuellen Strich
     let ladeToken = 0;
+    let korrekturAktiv = true;
     const pen = { farbe: 'black', zeichnen: false, stift: false, breite: 1 };
 
     // --- Hilfsfunktionen Strich-Rendering ---
@@ -396,7 +403,8 @@ const Sketch = (() => {
 
     function canvasGroesse() {
         const bereich = document.getElementById('skizzebereich');
-        const size = bereich.clientWidth - 32; // 2 × 1rem container padding
+        const breite = bereich.clientWidth - 32; // 2 × 1rem container padding
+        const size = Math.floor(breite);
         if (size <= 0) return;
 
         const oldWidth = canvas.width;
@@ -448,6 +456,9 @@ const Sketch = (() => {
         ['skizze', 'gitter'].forEach(id => {
             document.getElementById(id).addEventListener('click', () => setMode(id === 'gitter'));
         });
+        document.getElementById('zeichnen_freihand')?.addEventListener('click', () => setKorrektur(false));
+        document.getElementById('zeichnen_korrektur')?.addEventListener('click', () => setKorrektur(true));
+        setKorrektur(korrekturAktiv);
         canvasGroesse();
     }
 
@@ -514,11 +525,18 @@ const Sketch = (() => {
         }
 
         if (strokePoints.length < 2) return;
-        const stroke = autoKorrektur();
+        const stroke = korrekturAktiv ? autoKorrektur() : freihandStrich();
         strokes.push(stroke);
         if (undoStack.length >= HISTORY_MAX) undoStack.shift();
         undoStack.push({ type: 'draw', stroke });
         App.triggerAutoSave();
+    }
+
+    function freihandStrich() {
+        const stroke = { type: 'freehand', points: [...strokePoints], color: pen.farbe, width: pen.breite };
+        redrawAll();
+        drawStroke(stroke);
+        return stroke;
     }
 
     // Gibt den korrigierten Strich als Objekt zurück und zeichnet ihn
@@ -591,6 +609,12 @@ const Sketch = (() => {
 
     function setMode(gitter) {
         leinwand(gitter);
+    }
+
+    function setKorrektur(aktiv) {
+        korrekturAktiv = Boolean(aktiv);
+        document.getElementById('zeichnen_freihand')?.classList.toggle('aktiv', !korrekturAktiv);
+        document.getElementById('zeichnen_korrektur')?.classList.toggle('aktiv', korrekturAktiv);
     }
 
     function getDataURL() { return canvas.toDataURL('image/png'); }
@@ -788,7 +812,7 @@ function fotoNormalisieren(foto) {
 
 function fotosNormalisieren(fotos) {
     return Array.isArray(fotos)
-        ? fotos.map(fotoNormalisieren).filter(Boolean).slice(0, 3)
+        ? fotos.map(fotoNormalisieren).filter(Boolean)
         : [];
 }
 
@@ -799,7 +823,7 @@ async function fotoAlsDataUrl(foto) {
 
 async function fotosAlsDataUrls(fotos) {
     const result = await Promise.all((fotos || []).map(fotoAlsDataUrl));
-    return result.filter(Boolean).slice(0, 3);
+    return result.filter(Boolean);
 }
 
 async function recordFuerExport(record) {
@@ -1187,13 +1211,13 @@ const UIFeedback = (() => {
         const container = document.getElementById('fotos');
         if (!container) return;
         const count = container.children.length;
+        container.dataset.count = String(count);
         container.classList.toggle('fotos-container--leer', count === 0);
         const zaehler = document.getElementById('fotoZaehler');
-        if (zaehler) zaehler.textContent = `${count}/3`;
+        if (zaehler) zaehler.textContent = `${count}`;
         const label = document.getElementById('kamera-label');
         if (label) {
-            label.classList.toggle('is-disabled', count >= 3);
-            label.setAttribute('aria-disabled', count >= 3 ? 'true' : 'false');
+            label.setAttribute('aria-disabled', 'false');
         }
     }
 
@@ -1426,34 +1450,33 @@ function printSummaryMedien(parent, data) {
     const fotos = (data.fotos || []).filter(Boolean);
     const hatSkizze = data.skizze_genutzt === true && hatWert(data.skizze);
     if (!hatSkizze && !fotos.length) return false;
-    const section = el('section', 'print-summary-section');
-    section.appendChild(el('h2', '', 'Medien'));
+    const section = el('section', 'print-summary-section print-summary-section--medien');
+    section.appendChild(el('h2', '', 'Fotos und Skizzen'));
     const media = el('div', 'print-summary-media');
     if (hatSkizze) {
-        const wrap = el('div', 'print-summary-skizze');
+        const wrap = el('div', 'print-summary-media-item print-summary-media-item--skizze');
         const img = document.createElement('img');
         img.alt = 'Skizze';
         img.src = data.skizze;
         wrap.appendChild(img);
         media.appendChild(wrap);
     }
-    if (fotos.length) {
-        const wrap = el('div', 'print-summary-fotos');
-        fotos.forEach((foto, index) => {
-            const img = document.createElement('img');
-            img.alt = `Foto ${index + 1}`;
-            const blob = fotoNormalisieren(foto);
-            if (blob) {
-                const objectUrl = URL.createObjectURL(blob);
-                img.src = objectUrl;
-                img.dataset.objectUrl = objectUrl;
-            } else {
-                img.src = String(foto || '');
-            }
-            wrap.appendChild(img);
-        });
+    fotos.forEach((foto, index) => {
+        const wrap = el('div', 'print-summary-media-item');
+        const img = document.createElement('img');
+        img.alt = `Foto ${index + 1}`;
+        const blob = fotoNormalisieren(foto);
+        if (blob) {
+            const objectUrl = URL.createObjectURL(blob);
+            img.src = objectUrl;
+            img.dataset.objectUrl = objectUrl;
+        } else {
+            img.src = String(foto || '');
+        }
+        wrap.appendChild(img);
         media.appendChild(wrap);
-    }
+    });
+    media.dataset.count = String(media.children.length);
     section.appendChild(media);
     parent.appendChild(section);
     return true;
@@ -2266,8 +2289,7 @@ function fotosLeeren() {
 function fotosAusFormular() {
     return Array.from(document.querySelectorAll('#fotos .foto-wrapper img'))
         .map(img => img._fotoBlob || null)
-        .filter(Boolean)
-        .slice(0, 3);
+        .filter(Boolean);
 }
 
 function fotoHinzufuegen(foto) {
@@ -2300,20 +2322,30 @@ function fotoHinzufuegen(foto) {
 }
 
 async function bildAuswahl() {
-    const file = document.getElementById('input').files[0];
-    if (!file) return;
-    document.getElementById('input').value = '';
-    if (!file.type.match(/image.*/)) { App.toast('Datei nicht unterstützt', 'fehler'); return; }
-    if (document.getElementById('fotos').children.length >= 3) {
-        App.toast('Maximal 3 Fotos', 'warn'); return;
+    const input = document.getElementById('input');
+    const files = Array.from(input?.files || []);
+    if (!files.length) return;
+    input.value = '';
+    const bildDateien = files.filter(file => /^image\//.test(file.type));
+    if (!bildDateien.length) { App.toast('Datei nicht unterstützt', 'fehler'); return; }
+    let hinzugefuegt = 0;
+    let fehler = files.length - bildDateien.length;
+    for (const file of bildDateien) {
+        try {
+            const blob = await fotoDateiKomprimieren(file);
+            fotoHinzufuegen(blob);
+            hinzugefuegt++;
+        } catch (e) {
+            fehler++;
+            console.warn('[Fotos] Foto konnte nicht verarbeitet werden:', e);
+        }
     }
-    try {
-        const blob = await fotoDateiKomprimieren(file);
-        fotoHinzufuegen(blob);
+    if (hinzugefuegt > 0) {
         App.triggerAutoSave();
         speicherplatzPruefen();
-    } catch (e) {
-        App.toast('Foto konnte nicht verarbeitet werden: ' + e.message, 'fehler');
+    }
+    if (fehler > 0) {
+        App.toast(fehler === 1 ? '1 Datei nicht verarbeitet' : `${fehler} Dateien nicht verarbeitet`, hinzugefuegt > 0 ? 'warn' : 'fehler');
     }
 }
 

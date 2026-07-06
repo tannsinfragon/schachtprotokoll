@@ -163,13 +163,17 @@ header {
 }
 
 .media-zeile #skizzebereich {
-    flex: 0 0 auto;
+    flex: 0 0 clamp(380px, 40%, 440px);
+    width: auto;
+    max-width: 440px;
+    min-width: 0;
     display: flex;
     flex-direction: column;
 }
 
 .media-zeile #fotobereich {
-    flex: 1;
+    flex: 1 1 auto;
+    width: auto;
     min-width: 0;
     overflow: hidden;
     display: flex;
@@ -457,25 +461,46 @@ canvas {
     border-radius: 4px;
     touch-action: none;
     display: block;
+    align-self: stretch;
+    width: 100%;
+    height: auto;
+    max-width: 100%;
 }
 
 .print-only {
     display: none;
 }
 
+.media-zeile #skizzebereich .grundriss {
+    width: 100%;
+    align-self: stretch;
+}
+
+.media-zeile #skizzebereich menu {
+    width: 100%;
+    align-self: stretch;
+    flex-wrap: nowrap;
+    justify-content: flex-start;
+    padding-inline: 0.55rem;
+}
+
 .grundriss {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    flex-wrap: nowrap;
+    gap: 0.35rem;
     margin-top: 0.4rem;
 }
 
 .grundriss button {
+    flex: 1 1 0;
+    min-width: 0;
+    min-height: 2.3rem;
     background-color: var(--farbemenu);
     color: var(--farbemenu-text);
     border: none;
     border-radius: 4px;
-    padding: 0.3rem 0.8rem;
+    padding: 0.3rem 0.45rem;
     cursor: pointer;
     font-size: 0.82rem;
     font-weight: 600;
@@ -530,22 +555,25 @@ dialog.dialog-fallback-offen {
 /* ── Fotos ── */
 .fotos-container {
     flex: 1;
-    min-height: 0;
-    display: flex;
-    flex-direction: row;
-    gap: 0.4rem;
-    overflow: hidden;
-    background: var(--farbehintergrund);
+    min-height: 180px;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(120px, 160px));
+    align-content: start;
+    justify-content: start;
+    gap: 0.55rem;
+    overflow-y: auto;
+    overflow-x: hidden;
+    background: transparent;
     border-radius: 4px;
 }
 
 .foto-wrapper {
-    flex: 0 0 calc((100% - 0.8rem) / 3);
     min-width: 0;
     position: relative;
     overflow: hidden;
     border-radius: 4px;
     background: var(--farbehintergrund);
+    aspect-ratio: 4 / 3;
 }
 
 .foto-wrapper img {
@@ -759,6 +787,11 @@ dialog.dialog-fallback-offen {
     background: rgba(255, 255, 255, 0.08);
 }
 
+.speicherstatus--checking {
+    color: #dbeafe;
+    border-color: rgba(219, 234, 254, 0.35);
+}
+
 .speicherstatus--active {
     color: #dff7df;
     border-color: rgba(46, 125, 50, 0.45);
@@ -962,13 +995,15 @@ dialog.dialog-fallback-offen {
     }
 
     .fotos-container--leer {
-        align-items: center;
+        align-content: center;
         justify-content: center;
+        place-items: center;
         border: 1px dashed var(--farberahmen);
     }
 
     .fotos-container--leer::before {
         content: "Keine Fotos";
+        grid-column: 1 / -1;
         color: #6b7280;
         font-size: 0.88rem;
     }
@@ -980,10 +1015,6 @@ dialog.dialog-fallback-offen {
         font-weight: 700;
     }
 
-    #kamera-label.is-disabled {
-        opacity: 0.45;
-        pointer-events: none;
-    }
 }
 
 
@@ -1164,30 +1195,36 @@ dialog.dialog-fallback-offen {
     }
 
     .print-summary-media {
-        display: flex;
-        gap: 5pt;
-        align-items: flex-start;
-    }
-
-    .print-summary-skizze {
-        flex: 0 0 145pt;
-        max-width: 145pt;
-    }
-
-    .print-summary-fotos {
-        flex: 1;
         display: grid;
-        grid-template-columns: repeat(3, minmax(0, 1fr));
-        gap: 3pt;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 7pt;
+        align-items: start;
+    }
+
+    .print-summary-media[data-count="1"] .print-summary-media-item {
+        grid-column: 1 / -1;
+    }
+
+    .print-summary-media-item {
+        overflow: hidden;
+        aspect-ratio: 4 / 3;
+        border: 0.45pt solid #d8dce3;
+        background: #f5f6f8;
+        break-inside: avoid;
+        page-break-inside: avoid;
     }
 
     .print-summary-media img {
         display: block;
         width: 100%;
-        max-height: 145pt;
+        height: 100%;
+        object-fit: cover;
+        object-position: center;
+    }
+
+    .print-summary-media-item--skizze img {
         object-fit: contain;
-        border: 0.45pt solid #d8dce3;
-        background: #f5f6f8;
+        background: #fff;
     }
 
     /* ─ Main layout grid ─ */
@@ -1440,26 +1477,33 @@ dialog.dialog-fallback-offen {
     }
 
     .fotos-container {
-        display: flex;
-        flex-direction: row;
-        gap: 3pt;
-        background: #f0f0f0;
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        align-content: start;
+        gap: 5pt;
+        background: transparent;
         border-radius: 4px;
         width: 100%;
-        height: 160pt;
+        height: auto;
+        min-height: 0;
+        overflow: visible;
     }
 
     .foto-wrapper {
-        flex: 0 0 calc((100% - 6pt) / 3);
-        height: 160pt;
         overflow: hidden;
         border-radius: 4px;
         background: #e0e0e0;
+        aspect-ratio: 4 / 3;
+    }
+
+    .fotos-container[data-count="1"] .foto-wrapper {
+        grid-column: 1 / -1;
+        aspect-ratio: 16 / 10;
     }
 
     .foto-wrapper img {
         width: 100%;
-        height: 160pt;
+        height: 100%;
         object-fit: cover;
         object-position: center;
         display: block;
@@ -1536,7 +1580,13 @@ dialog.dialog-fallback-offen {
 }
 
 /* ── Responsive ── */
-@media (max-width: 1023px) {
+@media (max-width: 1023px) and (min-width: 768px) {
+    .fotos-container {
+        min-height: 220px;
+    }
+}
+
+@media (max-width: 767px) {
     .media-zeile {
         flex-direction: column;
     }
@@ -1547,12 +1597,6 @@ dialog.dialog-fallback-offen {
         flex: 1 1 auto;
     }
 
-    .fotos-container {
-        min-height: 220px;
-    }
-}
-
-@media (max-width: 767px) {
     #hauptnav {
         align-items: stretch;
         gap: 0.5rem;
