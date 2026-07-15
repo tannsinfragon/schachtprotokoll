@@ -32,10 +32,11 @@
             .replace(/\/{2,}/g, '/');
     }
 
-    function toBytes(data) {
+    async function toBytes(data) {
         if (data instanceof Uint8Array) return data;
         if (data instanceof ArrayBuffer) return new Uint8Array(data);
         if (ArrayBuffer.isView(data)) return new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+        if (data instanceof Blob) return new Uint8Array(await data.arrayBuffer());
         return utf8(data);
     }
 
@@ -115,7 +116,8 @@
 
             for (const file of this.files) {
                 const nameBytes = utf8(file.name);
-                const dataBytes = toBytes(await file.data);
+                const originalData = await file.data;
+                const dataBytes = await toBytes(originalData);
                 const crc = crc32(dataBytes);
 
                 const local = new Uint8Array(30 + nameBytes.length);
@@ -130,7 +132,7 @@
                 writeU32(local, 22, dataBytes.length);
                 writeU16(local, 26, nameBytes.length);
                 local.set(nameBytes, 30);
-                localParts.push(local, dataBytes);
+                localParts.push(local, originalData instanceof Blob ? originalData : dataBytes);
 
                 const central = new Uint8Array(46 + nameBytes.length);
                 writeU32(central, 0, 0x02014b50);
@@ -160,9 +162,11 @@
             writeU32(end, 16, offset);
 
             const all = [...localParts, ...centralParts, end];
-            const bytes = concat(all, offset + centralSize + end.length);
-            if (options.type === 'uint8array') return bytes;
-            return new Blob([bytes], { type: options.mimeType || 'application/zip' });
+            if (options.type === 'uint8array') return concat(all.map(toBytesResult => {
+                if (toBytesResult instanceof Blob) throw new Error('Uint8Array-Ausgabe unterstützt keine Blob-Dateien');
+                return toBytesResult;
+            }), offset + centralSize + end.length);
+            return new Blob(all, { type: options.mimeType || 'application/zip' });
         }
     }
 

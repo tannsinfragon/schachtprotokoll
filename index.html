@@ -2,13 +2,14 @@
     Schachtprotokoll Abwasser
     Originalautor: Andreas Blaser
     Erweitert von: Severin Tanner
-    Letztes Update: 16.03.2026
+    Letztes Update: 14.07.2026
 -->
 <!DOCTYPE html>
 <html lang="de">
 
 <head>
     <meta charset="UTF-8">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="description" content="Schachtprotokoll Abwasser">
     <meta name="theme-color" content="#1e2a3a">
@@ -37,6 +38,15 @@
     </nav>
 
     <div id="offline-banner"></div>
+    <div id="update-banner" hidden>
+        Neue App-Version verfügbar.
+        <button type="button" id="updateNeuLaden">Jetzt neu laden</button>
+    </div>
+    <div id="speicherfehler-banner" hidden role="alert">
+        <span id="speicherfehler-text">Änderungen sind nicht gespeichert.</span>
+        <button type="button" id="speichernWiederholen">Erneut speichern</button>
+        <button type="button" id="entwurfSichern">Entwurf als JSON sichern</button>
+    </div>
 
     <div id="erfassungsumfang" class="container erfassungsumfang-leiste">
         <h3 class="section-titel">Erfassungsumfang</h3>
@@ -59,6 +69,7 @@
                 <span>Zustand</span>
             </label>
         </form>
+        <p class="umfang-hinweis">Ausgeschaltete Bereiche werden im Formular und PDF ausgeblendet. Das JSON-Backup behält alle erfassten Daten.</p>
     </div>
 
     <div class="hauptinhalt">
@@ -70,51 +81,52 @@
                 <div class="feld-zeile">
                     <div class="feld">
                         <label class="feldname" for="gemeinde">Gemeinde</label>
-                        <input type="text" id="gemeinde" placeholder="Gemeinde">
+                        <input type="text" id="gemeinde" placeholder="Gemeinde" required maxlength="120">
                     </div>
                     <div class="feld">
                         <label class="feldname" for="strasse">Strasse / Ort</label>
-                        <input type="text" id="strasse" placeholder="Strasse / Ort">
+                        <input type="text" id="strasse" placeholder="Strasse / Ort" maxlength="160">
                     </div>
                 </div>
                 <div class="feld-zeile">
                     <div class="feld">
                         <label class="feldname" for="nummer">Schacht-Nr.</label>
-                        <input type="text" id="nummer" placeholder="Schacht-Nr.">
+                        <input type="text" id="nummer" placeholder="Schacht-Nr." required maxlength="80">
                     </div>
                     <div class="feld">
                         <label class="feldname" for="parzelle">Parzellen-Nr.</label>
-                        <input type="text" id="parzelle" placeholder="Parzellen-Nr.">
+                        <input type="text" id="parzelle" placeholder="Parzellen-Nr." maxlength="80">
                     </div>
                 </div>
                 <div class="feld-zeile">
                     <div class="feld">
                         <label class="feldname" for="aufnahmedatum">Aufnahmedatum</label>
-                        <input type="date" id="aufnahmedatum" placeholder="Aufnahmedatum">
+                        <input type="date" id="aufnahmedatum" placeholder="Aufnahmedatum" required>
                     </div>
                     <div class="feld">
                         <label class="feldname" for="visum">Visum / Kürzel</label>
-                        <input type="text" id="visum" placeholder="Visum / Kürzel">
+                        <input type="text" id="visum" placeholder="Visum / Kürzel" maxlength="40">
                     </div>
                 </div>
                 <div class="feld">
                     <label class="feldname" for="notiz">Bemerkungen</label>
-                    <input type="text" id="notiz" placeholder="Bemerkungen">
+                    <input type="text" id="notiz" placeholder="Bemerkungen" maxlength="2000">
                 </div>
                 <div class="feld-zeile">
                     <div class="feld">
                         <label class="feldname" for="koordinaten_e">Koordinaten E (LV95)</label>
-                        <input type="text" id="koordinaten_e" placeholder="2'600'000" inputmode="numeric">
+                        <input type="text" id="koordinaten_e" placeholder="2'600'000" inputmode="numeric" maxlength="12" aria-describedby="koordinatenHinweis">
                     </div>
                     <div class="feld">
                         <label class="feldname" for="koordinaten_n">Koordinaten N (LV95)</label>
-                        <input type="text" id="koordinaten_n" placeholder="1'200'000" inputmode="numeric">
+                        <input type="text" id="koordinaten_n" placeholder="1'200'000" inputmode="numeric" maxlength="12" aria-describedby="koordinatenHinweis">
                     </div>
                     <div class="feld">
                         <label class="feldname" for="koordinaten_z">H Koord (m ü. M.)</label>
-                        <input type="text" id="koordinaten_z" placeholder="450.00" inputmode="decimal">
+                        <input type="text" id="koordinaten_z" placeholder="450.00" inputmode="decimal" maxlength="10">
                     </div>
                 </div>
+                <p id="koordinatenHinweis" class="feld-hinweis">LV95: E 2'000'000–3'000'000, N 1'000'000–1'400'000</p>
             </form>
         </div>
 
@@ -149,8 +161,8 @@
                             <option value="" disabled selected hidden>Material</option>
                             <option value="">-</option>
                             <option value="Guss">Guss</option>
-                            <option value="Guss mit Betonfüllung">GuBe</option>
-                            <option value="Guss mit Betonfüllung (beflüftet)">GuBe (beflüftet)</option>
+                            <option value="Guss mit Betonfüllung">Guss/Beton</option>
+                            <option value="Guss mit Betonfüllung (beflüftet)">Guss/Beton (belüftet)</option>
                             <option value="Beton">Beton</option>
                             <option value="Keiner">Keiner</option>
                         </select>
@@ -188,7 +200,7 @@
                 <div class="feld-zeile">
                     <div class="feld">
                         <label class="feldname" for="deckel_baujahr">Baujahr</label>
-                        <input type="text" id="deckel_baujahr" placeholder="Baujahr" inputmode="numeric">
+                        <input type="text" id="deckel_baujahr" placeholder="Baujahr" inputmode="numeric" maxlength="4" pattern="[0-9]{4}">
                     </div>
                     <div class="feld"></div>
                 </div>
@@ -237,7 +249,7 @@
                     </div>
                     <div class="feld">
                         <label class="feldname" for="schacht_sohle">Sohle D- (cm)</label>
-                        <input type="text" id="schacht_sohle" placeholder="Sohle D- (cm)" inputmode="decimal">
+                        <input type="text" id="schacht_sohle" placeholder="Sohle D- (cm)" inputmode="decimal" maxlength="10">
                     </div>
                 </div>
                 <div class="feld-zeile">
@@ -263,8 +275,29 @@
                 </div>
                 <div class="feld-zeile">
                     <div class="feld">
+                        <label class="feldname" for="schacht_medium">Medium</label>
+                        <select id="schacht_medium">
+                            <option value="" disabled selected hidden>Medium</option>
+                            <option value="">-</option>
+                            <option value="MW">MW – Mischwasser</option>
+                            <option value="SW">SW – Schmutzabwasser</option>
+                            <option value="RW">RW – Regenabwasser</option>
+                        </select>
+                    </div>
+                    <div class="feld">
+                        <label class="feldname" for="schacht_einstieghilfe">Einstieghilfe</label>
+                        <select id="schacht_einstieghilfe">
+                            <option value="" disabled selected hidden>Einstieghilfe</option>
+                            <option value="">-</option>
+                            <option value="Vorhanden">Vorhanden</option>
+                            <option value="Fehlt">Fehlt</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="feld-zeile">
+                    <div class="feld">
                         <label class="feldname" for="schacht_baujahr">Baujahr</label>
-                        <input type="text" id="schacht_baujahr" placeholder="Baujahr" inputmode="numeric">
+                        <input type="text" id="schacht_baujahr" placeholder="Baujahr" inputmode="numeric" maxlength="4" pattern="[0-9]{4}">
                     </div>
                     <div class="feld">
                         <label class="feldname" for="zustand">Zustand</label>
@@ -427,6 +460,8 @@
                     <button id="zeichnen_korrektur" type="button" class="aktiv">Korrektur</button>
                 </div>
                 <p class="skizze-hinweis">Sonderbauwerke möglichst genau skizzieren, beschriften</p>
+                <label class="feldname" for="skizze_beschreibung">Skizzenbeschreibung für Tastaturbedienung</label>
+                <textarea id="skizze_beschreibung" maxlength="1000" rows="3" placeholder="Schachtform, Einläufe, Ausläufe und Anschlussnummern beschreiben"></textarea>
             </div>
 
             <!-- Fotos -->
@@ -444,10 +479,15 @@
     </div><!-- /hauptinhalt -->
 
     <!-- ── Schächte-Liste Panel ── -->
-    <div id="schachtListe" class="panel">
+    <div id="schachtListe" class="panel" role="dialog" aria-modal="true" aria-labelledby="schachtListeTitel">
         <div class="panel-kopf">
-            <h3>Gespeicherte Schächte</h3>
+            <h3 id="schachtListeTitel">Gespeicherte Schächte</h3>
             <button type="button" data-action="schachtliste-schliessen" title="Schliessen">✕</button>
+        </div>
+        <div class="panel-werkzeuge">
+            <label for="schachtSuche">Schächte filtern</label>
+            <input type="search" id="schachtSuche" placeholder="Gemeinde, Strasse, Nummer oder Typ" autocomplete="off">
+            <span id="schachtAnzahl" aria-live="polite"></span>
         </div>
         <div class="panel-inhalt">
             <table id="schachtListeTabelle">
@@ -468,6 +508,7 @@
             <div class="panel-daten-gruppe">
                 <span class="panel-daten-label">Exportieren</span>
                 <button type="button" data-action="export-json">JSON</button>
+                <button type="button" data-action="export-json-ohne-bilder">JSON ohne Bilder</button>
                 <button type="button" data-action="export-bilder">Bilder</button>
                 <button type="button" data-action="export-alle-pdf">PDF</button>
             </div>
@@ -478,9 +519,10 @@
                        >
             </div>
             <div class="panel-daten-gruppe panel-daten-gefahr">
-                <span class="panel-daten-label">Cache</span>
-                <button type="button" data-action="alle-schachte-loeschen" class="btn-gefahr">Alle löschen</button>
+                <span class="panel-daten-label">Datenbank</span>
+                <button type="button" data-action="alle-schachte-loeschen" class="btn-gefahr">Alle Schächte löschen</button>
             </div>
+            <p class="lokaldaten-hinweis">Daten liegen lokal und unverschlüsselt in diesem Browserprofil. JSON-Backups regelmässig extern sichern.</p>
         </div>
     </div>
     <div id="panelOverlay" class="panel-overlay" data-action="schachtliste-schliessen" style="display:none"></div>
@@ -498,7 +540,7 @@
                 <!-- Richtung -->
                 <div class="dialog-gruppe">
                     <label class="dialog-label">Richtung</label>
-                    <select id="ltg_richtung">
+                    <select id="ltg_richtung" required>
                         <option value="Einlauf">Einlauf</option>
                         <option value="Auslauf">Auslauf</option>
                         <option value="Überlauf">Überlauf</option>
@@ -509,7 +551,7 @@
                 <div class="dialog-gruppe">
                     <label class="dialog-label">Dimension & Profil</label>
                     <div class="feld-zeile">
-                        <input type="text" id="tiefe" placeholder="D- Tiefe (m)" inputmode="decimal">
+                        <input type="text" id="tiefe" placeholder="D- Tiefe (m)" inputmode="decimal" maxlength="8">
                         <select id="ltg_profil">
                             <option value="" disabled selected hidden>Profil</option>
                             <option value="">-</option>
@@ -536,7 +578,7 @@
                             <option value="Beton">Beton</option>
                             <option value="Andere">Andere</option>
                         </select>
-                        <input type="text" list="lrdm" id="rdm" placeholder="NW (mm)" inputmode="numeric">
+                        <input type="text" list="lrdm" id="rdm" placeholder="NW (mm)" inputmode="numeric" maxlength="8">
                     </div>
                     <datalist id="lrdm">
                         <option value="90"/><option value="100"/><option value="125"/>
@@ -597,7 +639,7 @@
                 <!-- Notiz -->
                 <div class="dialog-gruppe">
                     <label class="dialog-label">Notiz / Besonderes</label>
-                    <input type="text" id="lnotiz" placeholder="z.B. Trockenwetterfallrohr, Durchmesser eintragen">
+                    <input type="text" id="lnotiz" maxlength="500" placeholder="z.B. Trockenwetterfallrohr, Durchmesser eintragen">
                 </div>
 
                 <p class="pflicht-hinweis">Leitungen erhalten eine fortlaufende Nummer</p>
@@ -615,8 +657,8 @@
     </dialog>
 
     <!-- ── Status-Bar & Toast ── -->
-    <div id="statusbar" class="statusbar"><span class="statusbar-copyright">&copy; Andreas Blaser / Severin Tanner</span><span id="speicherstatus" class="speicherstatus speicherstatus--checking">Speicherprüfung</span><span id="statusbar-text">Bereit</span></div>
-    <div id="toast" class="toast"></div>
+    <div id="statusbar" class="statusbar"><span class="statusbar-copyright">&copy; Andreas Blaser / Severin Tanner</span><span id="speicherstatus" class="speicherstatus speicherstatus--checking">Speicherprüfung</span><span id="statusbar-text" role="status" aria-live="polite">Bereit</span></div>
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
     <script src="./assets/js/app-config.js"></script>
     <script src="./assets/vendor/zip-writer.js"></script>

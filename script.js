@@ -1,12 +1,24 @@
 'use strict';
 
-const APP_VERSION = window.AppConfig?.version || '2.5.0';
-const EXPORT_SCHEMA_VERSION = window.AppConfig?.schemaVersion || 2;
+const APP_VERSION = window.AppConfig?.version || '2.8.1';
+const EXPORT_SCHEMA_VERSION = window.AppConfig?.schemaVersion || 3;
 const APP_FIRMA = window.AppConfig?.company || '';
 const FOTO_MAX_KANTE = window.AppConfig?.photo?.maxEdge || 1600;
 const FOTO_JPEG_QUALITAET = window.AppConfig?.photo?.jpegQuality || 0.82;
+const FOTO_MAX_ANZAHL = window.AppConfig?.photo?.maxFilesPerRecord || 20;
+const FOTO_MAX_DATEIGROESSE = window.AppConfig?.photo?.maxInputBytes || 25 * 1024 * 1024;
+const FOTO_MAX_PIXEL = window.AppConfig?.photo?.maxPixels || 40 * 1000 * 1000;
 const QUOTA_WARN_RATIO = window.AppConfig?.storage?.quotaWarnRatio || 0.85;
-const CSV = window.CSVTools;
+const IMPORT_MAX_DATEIGROESSE = window.AppConfig?.import?.maxFileBytes || 150 * 1024 * 1024;
+const IMPORT_GROSS_WARNUNG = window.AppConfig?.import?.largeFileWarningBytes || 75 * 1024 * 1024;
+const IMPORT_MAX_DATENSAETZE = window.AppConfig?.import?.maxRecords || 500;
+const IMPORT_MAX_TEXT = window.AppConfig?.import?.maxTextChars || 5000;
+const IMPORT_MAX_FOTOS = window.AppConfig?.import?.maxPhotosPerRecord || 20;
+const IMPORT_MAX_DATA_URL = window.AppConfig?.import?.maxDataUrlChars || 15 * 1024 * 1024;
+const IMPORT_MAX_LEITUNGEN = window.AppConfig?.import?.maxLeitungenPerRecord || 100;
+const IMPORT_MAX_STRICHE = window.AppConfig?.import?.maxStrokesPerRecord || 1000;
+const BACKUP_ERINNERUNG_TAGE = window.AppConfig?.storage?.backupReminderDays || 30;
+const EXPORT_MAX_MEDIEN_BYTES = window.AppConfig?.storage?.maxExportMediaBytes || 250 * 1024 * 1024;
 
 // ============================================================
 // DB – IndexedDB Datenbankschicht
@@ -17,10 +29,9 @@ const DB = (() => {
     const STORE = 'schächte';
     let _db = null;
 
-    async function open() {
-        if (_db) return _db;
+    function openMitVersion(version = DB_VERSION) {
         return new Promise((resolve, reject) => {
-            const req = indexedDB.open(DB_NAME, DB_VERSION);
+            const req = version === null ? indexedDB.open(DB_NAME) : indexedDB.open(DB_NAME, version);
             req.onupgradeneeded = e => {
                 const db = e.target.result;
                 if (!db.objectStoreNames.contains(STORE)) {
@@ -29,12 +40,31 @@ const DB = (() => {
             };
             req.onsuccess = e => {
                 _db = e.target.result;
+                if (!_db.objectStoreNames.contains(STORE)) {
+                    _db.close();
+                    _db = null;
+                    reject(new Error(`Object Store "${STORE}" fehlt`));
+                    return;
+                }
                 _db.onclose = () => { _db = null; };
                 _db.onversionchange = () => { _db.close(); _db = null; };
                 resolve(_db);
             };
             req.onerror = e => reject(e.target.error);
+            req.onblocked = () => reject(new DOMException('Datenbank wird durch einen anderen Tab blockiert', 'BlockedError'));
         });
+    }
+
+    async function open() {
+        if (_db) return _db;
+        try {
+            return await openMitVersion(DB_VERSION);
+        } catch (e) {
+            // Eine lokal bereits vorhandene Datenbank kann eine höhere Version
+            // besitzen. In diesem Fall wird sie ohne Downgrade-Versuch geöffnet.
+            if (e?.name === 'VersionError') return openMitVersion(null);
+            throw e;
+        }
     }
 
     async function speichern(schacht) {
@@ -91,7 +121,49 @@ const DB = (() => {
         });
     }
 
-    return { open, speichern, laden, alle, loeschen };
+    async function alleLoeschen() {
+        const db = await open();
+        return new Promise((resolve, reject) => {
+            const tx = db.transaction(STORE, 'readwrite');
+            tx.oncomplete = () => resolve();
+            tx.onerror = () => reject(tx.error || new Error('Löschen fehlgeschlagen'));
+            tx.onabort = () => reject(tx.error || new Error('Löschen abgebrochen'));
+            tx.objectStore(STORE).clear();
+        });
+    }
+
+    async function vieleSpeichern(records) {
+        const db = await open();
+        return new Promise((resolve, reject) => {
+            const tx = db.transaction(STORE, 'readwrite');
+            const store = tx.objectStore(STORE);
+            const now = new Date().toISOString();
+            tx.oncomplete = () => resolve(records.length);
+            tx.onerror = () => reject(tx.error || new Error('Import fehlgeschlagen'));
+            tx.onabort = () => reject(tx.error || new Error('Import abgebrochen'));
+            records.forEach(record => {
+                const daten = {
+                    ...record,
+                    erstellt_am: record._import_erstellt_am || now,
+                    geaendert_am: now,
+                    version: record._import_version || 1
+                };
+                const zielId = Number(record._import_ziel_id) || null;
+                delete daten._import_ziel_id;
+                delete daten._import_erstellt_am;
+                delete daten._import_version;
+                if (zielId) {
+                    daten.id = zielId;
+                    store.put(daten);
+                } else {
+                    delete daten.id;
+                    store.add(daten);
+                }
+            });
+        });
+    }
+
+    return { open, speichern, laden, alle, loeschen, alleLoeschen, vieleSpeichern };
 })();
 
 // ============================================================
@@ -102,10 +174,14 @@ const App = {
         currentSchachtId: null,
         dirty: false,
         autoSaveTimer: null,
+        recordToken: 0,
         leitungsnummer: 1,
         storageAvailable: false,
         storageStatus: 'checking',
+        storagePersistent: null,
     },
+
+    _saveChain: Promise.resolve(),
 
     toast(msg, typ = 'info') {
         const t = document.getElementById('toast');
@@ -140,34 +216,89 @@ const App = {
             banner.textContent = msg;
             banner.style.display = status === 'active' ? 'none' : 'block';
         }
+        if (status === 'blocked') App.speicherfehlerAnzeigen(msg);
     },
 
     triggerAutoSave() {
         clearTimeout(App.state.autoSaveTimer);
         App.state.dirty = true;
         App.setStatus('Nicht gespeichert');
-        App.state.autoSaveTimer = setTimeout(App.autoSpeichern, 800);
+        const token = App.state.recordToken;
+        App.state.autoSaveTimer = setTimeout(() => App.queueAutoSave(token), 800);
     },
 
-    async autoSpeichern() {
+    speicherfehlerAnzeigen(msg) {
+        const banner = document.getElementById('speicherfehler-banner');
+        const textEl = document.getElementById('speicherfehler-text');
+        if (textEl) textEl.textContent = msg;
+        if (banner) banner.hidden = false;
+    },
+
+    speicherfehlerAusblenden() {
+        const banner = document.getElementById('speicherfehler-banner');
+        if (banner) banner.hidden = true;
+    },
+
+    queueAutoSave(token) {
+        App._saveChain = App._saveChain
+            .catch(() => {})
+            .then(() => App.autoSpeichern(token));
+        return App._saveChain;
+    },
+
+    async aenderungenSpeichern() {
+        clearTimeout(App.state.autoSaveTimer);
+        if (!App.state.dirty) return true;
         if (!App.state.storageAvailable) {
             App.setStatus('Nicht gespeichert - Speicherung blockiert');
-            return;
+            App.toast('Aktion abgebrochen: Änderungen sind nicht gespeichert.', 'fehler');
+            App.speicherfehlerAnzeigen('Änderungen sind nicht gespeichert: Lokaler Speicher ist blockiert.');
+            return false;
+        }
+        const token = App.state.recordToken;
+        await App.queueAutoSave(token);
+        return token === App.state.recordToken && !App.state.dirty;
+    },
+
+    datensatzWechseln(id = null) {
+        clearTimeout(App.state.autoSaveTimer);
+        App.state.recordToken++;
+        App.state.currentSchachtId = id;
+        App.state.dirty = false;
+    },
+
+    async autoSpeichern(token = App.state.recordToken) {
+        if (token !== App.state.recordToken) return false;
+        if (!App.state.storageAvailable) {
+            App.setStatus('Nicht gespeichert - Speicherung blockiert');
+            return false;
         }
         try {
+            await Sketch.ready();
+            if (token !== App.state.recordToken) return;
             const schacht = Schacht.sammeln();
             const id = await DB.speichern(schacht);
+            if (token !== App.state.recordToken) return;
             App.state.currentSchachtId = id;
             App.state.dirty = false;
             const zeit = new Date().toLocaleTimeString('de-CH', { hour: '2-digit', minute: '2-digit' });
-            App.setStatus(`Gespeichert ${zeit}`);
+            const prueffehler = Schacht.validieren(schacht);
+            Schacht.validierungsfehlerAnzeigen(prueffehler);
+            const istEntwurf = prueffehler.length > 0;
+            App.setStatus(`${istEntwurf ? `Entwurf gespeichert (${prueffehler.length} Prüfhinweis${prueffehler.length !== 1 ? 'e' : ''})` : 'Gespeichert'} ${zeit}`);
+            App.toast(istEntwurf ? 'Entwurf lokal gespeichert' : 'Schacht gespeichert', 'success');
+            App.speicherfehlerAusblenden();
             speicherplatzPruefen();
+            return true;
         } catch (e) {
             console.error('[DB] Auto-Save Fehler:', e);
             if (e?.name === 'QuotaExceededError') {
                 App.setStorageStatus('blocked', 'Speicher voll: JSON-Backup exportieren und Fotos reduzieren.');
             }
             App.toast('Speichern fehlgeschlagen: ' + e.message, 'fehler');
+            App.setStatus('Nicht gespeichert - Fehler');
+            App.speicherfehlerAnzeigen(`Speichern fehlgeschlagen: ${e.message}`);
+            return false;
         }
     }
 };
@@ -196,10 +327,40 @@ async function speicherInitialisieren() {
     try {
         await DB.open();
         App.setStorageStatus('active', 'Speicherung aktiv');
+        if (navigator.storage?.persist) {
+            try {
+                App.state.storagePersistent = await navigator.storage.persist();
+                const statusEl = document.getElementById('speicherstatus');
+                if (statusEl) statusEl.title = App.state.storagePersistent
+                    ? 'Browser-Speicher ist dauerhaft angefordert.'
+                    : 'Browser kann lokale Daten bei Speicherdruck entfernen. JSON-Backups erstellen.';
+                if (!App.state.storagePersistent) {
+                    App.toast('Browser garantiert keine dauerhafte lokale Speicherung. JSON-Backup erstellen.', 'warn');
+                }
+            } catch (e) {
+                console.warn('[Storage] Persistenter Speicher konnte nicht angefordert werden:', e);
+            }
+        }
         await speicherplatzPruefen();
+        backupErinnerungPruefen();
     } catch (e) {
         console.error('[DB] Öffnen fehlgeschlagen:', e);
-        App.setStorageStatus('blocked', 'Datenbank blockiert. Formular nutzbar, Autosave blockiert.');
+        const detail = [e?.name, e?.message].filter(Boolean).join(': ');
+        const grund = detail ? ` (${detail})` : '';
+        App.setStorageStatus('blocked', `Datenbank blockiert${grund}. Formular nutzbar, Autosave blockiert.`);
+    }
+}
+
+function backupErinnerungPruefen() {
+    try {
+        const eintrag = JSON.parse(localStorage.getItem('letztes_json_backup') || 'null');
+        const zeit = eintrag?.typ === 'vollstaendig' ? Date.parse(eintrag.zeit) : NaN;
+        const alterTage = Number.isFinite(zeit) ? (Date.now() - zeit) / 86400000 : Infinity;
+        if (alterTage >= BACKUP_ERINNERUNG_TAGE) {
+            setTimeout(() => App.toast(`Letztes vollständiges JSON-Backup ist älter als ${BACKUP_ERINNERUNG_TAGE} Tage oder fehlt.`, 'warn'), 1200);
+        }
+    } catch (e) {
+        console.warn('[Backup] Erinnerung konnte nicht geprüft werden:', e);
     }
 }
 
@@ -221,6 +382,9 @@ const Sketch = (() => {
     let strokePoints = [];
     let preStrokeImageData = null;  // Canvas-Zustand vor dem aktuellen Strich
     let ladeToken = 0;
+    let ladePromise = Promise.resolve();
+    let ladeAktiv = false;
+    let rasterBasisAktiv = false;
     let korrekturAktiv = true;
     const pen = { farbe: 'black', zeichnen: false, stift: false, breite: 1 };
 
@@ -464,10 +628,13 @@ const Sketch = (() => {
 
     function leinwand(gitter) {
         ladeToken++;
+        ladeAktiv = false;
+        ladePromise = Promise.resolve();
         stiftZuruecksetzen();
         strokes = [];
         undoStack = [];
         loadedContent = false;
+        rasterBasisAktiv = false;
         standardHintergrundSetzen(gitter);
     }
 
@@ -478,7 +645,7 @@ const Sketch = (() => {
     // --- Zeichnen ---
 
     function start(event) {
-        if (!pen.stift) return;
+        if (!pen.stift || ladeAktiv) return;
         pen.zeichnen = true;
         cachedRect = canvas.getBoundingClientRect();
         const { x, y } = getCoords(event);
@@ -608,7 +775,16 @@ const Sketch = (() => {
     }
 
     function setMode(gitter) {
-        leinwand(gitter);
+        const neuerModus = Boolean(gitter);
+        if (neuerModus === currentMode) return;
+        if (rasterBasisAktiv) {
+            App.toast('Moduswechsel für ältere Raster-Skizzen nicht möglich.', 'warn');
+            return;
+        }
+        currentMode = neuerModus;
+        standardHintergrundSetzen(neuerModus);
+        redrawAll();
+        App.triggerAutoSave();
     }
 
     function setKorrektur(aktiv) {
@@ -619,6 +795,13 @@ const Sketch = (() => {
 
     function getDataURL() { return canvas.toDataURL('image/png'); }
 
+    function getBasisDataURL() {
+        if (!backgroundImageData) return '';
+        return imageDataCanvas(backgroundImageData, canvas.width, canvas.height).toDataURL('image/png');
+    }
+
+    function ready() { return ladePromise; }
+
     function getStrokes() {
         return strokes.map(s => strokeSkalieren(s, 1, 1)).filter(Boolean);
     }
@@ -627,7 +810,7 @@ const Sketch = (() => {
         return loadedContent || strokes.length > 0 || getDataURL() !== defaultDataURL;
     }
 
-    function ladeSkizze(dataURL, genutzt, gespeicherteStrokes = [], gitter = currentMode) {
+    function ladeSkizze(dataURL, genutzt, gespeicherteStrokes = [], gitter = currentMode, basisDataURL = '') {
         const token = ++ladeToken;
         stiftZuruecksetzen();
         strokes = strokesNormalisieren(gespeicherteStrokes);
@@ -635,25 +818,61 @@ const Sketch = (() => {
         loadedContent = false;
         standardHintergrundSetzen(Boolean(gitter));
 
-        if (strokes.length > 0) {
+        if (basisDataURL && strokes.length > 0) {
+            rasterBasisAktiv = false;
             loadedContent = typeof genutzt === 'boolean' ? genutzt : true;
-            redrawAll();
+            ladeAktiv = true;
+            ladePromise = new Promise(resolve => {
+                const img = new Image();
+                img.onload = () => {
+                    if (token === ladeToken) {
+                        standardHintergrundSetzen(Boolean(gitter));
+                        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                        hintergrundSpeichern();
+                        redrawAll();
+                    }
+                    if (token === ladeToken) ladeAktiv = false;
+                    resolve();
+                };
+                img.onerror = () => { if (token === ladeToken) ladeAktiv = false; resolve(); };
+                img.src = basisDataURL;
+            });
             return;
         }
 
-        if (!dataURL) return;
-        const img = new Image();
-        img.onload = () => {
-            if (token !== ladeToken) return;
-            standardHintergrundSetzen(Boolean(gitter));
-            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-            hintergrundSpeichern();
-            loadedContent = typeof genutzt === 'boolean' ? genutzt : dataURL !== defaultDataURL;
-        };
-        img.src = dataURL;
+        if (!dataURL) {
+            if (strokes.length > 0) {
+                redrawAll();
+                loadedContent = true;
+            }
+            ladeAktiv = false;
+            ladePromise = Promise.resolve();
+            return;
+        }
+        // Alte Datensätze enthalten kein separates Basisbild. Das vollständige
+        // Rasterbild wird deshalb als unveränderliche Basis übernommen. So gehen
+        // beim nachträglichen Ergänzen keine bestehenden Skizzenteile verloren.
+        strokes = [];
+        rasterBasisAktiv = true;
+        ladeAktiv = true;
+        ladePromise = new Promise(resolve => {
+            const img = new Image();
+            img.onload = () => {
+                if (token === ladeToken) {
+                    standardHintergrundSetzen(Boolean(gitter));
+                    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                    hintergrundSpeichern();
+                    loadedContent = typeof genutzt === 'boolean' ? genutzt : dataURL !== defaultDataURL;
+                }
+                if (token === ladeToken) ladeAktiv = false;
+                resolve();
+            };
+            img.onerror = () => { if (token === ladeToken) ladeAktiv = false; resolve(); };
+            img.src = dataURL;
+        });
     }
 
-    return { init, leinwand, farbwahl, undo, getDataURL, getStrokes, hasContent, ladeSkizze, setMode, get currentMode() { return currentMode; } };
+    return { init, leinwand, farbwahl, undo, getDataURL, getBasisDataURL, getStrokes, hasContent, ladeSkizze, ready, setMode, get currentMode() { return currentMode; } };
 })();
 
 // ============================================================
@@ -728,35 +947,12 @@ function formularUmfangNormalisieren(umfang) {
     }, {});
 }
 
-function boolZuText(value) {
-    return value ? 'Ja' : 'Nein';
-}
-
-function textZuBool(value, fallback) {
-    const text = String(value ?? '').trim().toLowerCase();
-    if (['ja', 'true', '1', 'x'].includes(text)) return true;
-    if (['nein', 'false', '0', '-'].includes(text)) return false;
-    return fallback;
-}
-
 function zustandsOptionLabel(key) {
     return ZUSTAND_OPTION_LABELS[key] || key;
 }
 
-function zustandsOptionKey(label) {
-    const text = String(label ?? '').trim();
-    return Object.keys(ZUSTAND_OPTION_LABELS).find(key => ZUSTAND_OPTION_LABELS[key] === text) || text;
-}
-
 function zustandsOptionenText(zustandsliste, gruppeKey) {
     return (zustandsliste?.[gruppeKey] || []).map(zustandsOptionLabel).join(', ');
-}
-
-function zustandsOptionenAusText(text) {
-    return String(text ?? '')
-        .split(',')
-        .map(v => zustandsOptionKey(v))
-        .filter(Boolean);
 }
 
 function istBlob(value) {
@@ -798,9 +994,11 @@ function blobZuDataUrl(blob) {
 }
 
 function fotoNormalisieren(foto) {
-    if (istBlob(foto)) return foto;
+    const istUnterstuetzt = mime => /^image\/(jpeg|png|webp)$/i.test(String(mime || ''));
+    if (istBlob(foto)) return istUnterstuetzt(foto.type) ? foto : null;
     if (istDataUrl(foto)) {
         try {
+            if (!istUnterstuetzt(dataUrlMime(foto))) return null;
             return dataUrlZuBlob(foto);
         } catch (e) {
             console.warn('[Fotos] Ungültiges Foto ignoriert:', e);
@@ -842,9 +1040,32 @@ function importRecordNormalisieren(raw) {
     delete s.erstellt_am;
     delete s.geaendert_am;
     delete s.version;
-    s.leitungen = Array.isArray(s.leitungen) ? s.leitungen.filter(v => v && typeof v === 'object') : [];
-    s.fotos = fotosNormalisieren(s.fotos);
-    s.skizze_strokes = Array.isArray(s.skizze_strokes) ? s.skizze_strokes : [];
+    Object.entries(s).forEach(([feld, value]) => {
+        if (typeof value === 'string' && !['skizze', 'skizze_basis'].includes(feld) && value.length > IMPORT_MAX_TEXT) {
+            throw new Error(`Textfeld «${feld}» ist länger als ${IMPORT_MAX_TEXT} Zeichen`);
+        }
+    });
+    const leitungen = Array.isArray(s.leitungen) ? s.leitungen.filter(v => v && typeof v === 'object') : [];
+    if (leitungen.length > IMPORT_MAX_LEITUNGEN) throw new Error(`Mehr als ${IMPORT_MAX_LEITUNGEN} Leitungen`);
+    leitungen.forEach((leitung, index) => Object.entries(leitung).forEach(([feld, value]) => {
+        if (typeof value === 'string' && value.length > 500) throw new Error(`Leitung ${index + 1}, Feld «${feld}» ist zu lang`);
+    }));
+    s.leitungen = leitungen;
+    const fotos = Array.isArray(s.fotos) ? s.fotos : [];
+    if (fotos.length > IMPORT_MAX_FOTOS) throw new Error(`Mehr als ${IMPORT_MAX_FOTOS} Fotos`);
+    fotos.forEach(foto => {
+        if (typeof foto === 'string' && foto.length > IMPORT_MAX_DATA_URL) {
+            throw new Error('Foto im Import ist zu gross');
+        }
+    });
+    s.fotos = fotosNormalisieren(fotos);
+    const strokes = Array.isArray(s.skizze_strokes) ? s.skizze_strokes : [];
+    if (strokes.length > IMPORT_MAX_STRICHE) throw new Error(`Mehr als ${IMPORT_MAX_STRICHE} Skizzenstriche`);
+    s.skizze_strokes = strokes;
+    if (typeof s.skizze === 'string' && s.skizze.length > IMPORT_MAX_DATA_URL) throw new Error('Skizze ist zu gross');
+    if (typeof s.skizze_basis === 'string' && s.skizze_basis.length > IMPORT_MAX_DATA_URL) throw new Error('Skizzenbasis ist zu gross');
+    s.skizze = istDataUrl(s.skizze) ? s.skizze : '';
+    s.skizze_basis = istDataUrl(s.skizze_basis) ? s.skizze_basis : '';
     if (s.skizze_modus && !['skizze', 'gitter'].includes(s.skizze_modus)) {
         s.skizze_modus = 'skizze';
     }
@@ -856,37 +1077,105 @@ function importRecordNormalisieren(raw) {
         s.zustandsliste = {};
     }
     Object.keys(s.zustandsliste).forEach(key => {
-        if (!Array.isArray(s.zustandsliste[key])) delete s.zustandsliste[key];
+        if (!ZUSTAND_GRUPPEN.some(gruppe => gruppe.key === key) || !Array.isArray(s.zustandsliste[key])) {
+            delete s.zustandsliste[key];
+            return;
+        }
+        s.zustandsliste[key] = s.zustandsliste[key]
+            .map(value => String(value || '').trim())
+            .filter(value => Object.prototype.hasOwnProperty.call(ZUSTAND_OPTION_LABELS, value));
     });
-    s.schadenstufe = String(s.schadenstufe || '');
+    s.schadenstufe = ['1', '2', '3', '4'].includes(String(s.schadenstufe || ''))
+        ? String(s.schadenstufe)
+        : '';
     return s;
 }
 
 function jsonImportRecords(daten) {
     if (Array.isArray(daten)) return daten;
     if (daten && Array.isArray(daten.records)) return daten.records;
+    if (daten && Object.prototype.hasOwnProperty.call(daten, 'records')) {
+        throw new Error('JSON-Feld «records» ist keine Liste');
+    }
     if (daten && typeof daten === 'object') return [daten];
     throw new Error('Ungültiges JSON-Format');
 }
 
-async function importRecordsSpeichern(records) {
-    let importiert = 0;
-    let fehler = 0;
-    for (const record of records) {
+async function importRecordsSpeichern(records, ziele = []) {
+    if (!Array.isArray(records) || records.length === 0) throw new Error('Keine Datensätze im Import');
+    if (records.length > IMPORT_MAX_DATENSAETZE) throw new Error(`Mehr als ${IMPORT_MAX_DATENSAETZE} Datensätze`);
+    const normalisiert = records.map((record, index) => {
         try {
-            await DB.speichern(importRecordNormalisieren(record));
-            importiert++;
+            const daten = importRecordNormalisieren(record);
+            const ziel = ziele[index];
+            if (ziel) {
+                daten._import_ziel_id = ziel.id;
+                daten._import_erstellt_am = ziel.erstellt_am;
+                daten._import_version = (ziel.version || 0) + 1;
+            }
+            return daten;
         } catch (e) {
-            console.warn('[Import] Datensatz übersprungen:', e);
-            fehler++;
+            throw new Error(`Datensatz ${index + 1}: ${e.message}`);
         }
+    });
+    await DB.vieleSpeichern(normalisiert);
+    return { importiert: normalisiert.length, aktualisiert: ziele.filter(Boolean).length, fehler: 0 };
+}
+
+function recordOhneBilder(record) {
+    return {
+        ...record,
+        fotos: [],
+        skizze: '',
+        skizze_basis: '',
+        skizze_genutzt: Array.isArray(record?.skizze_strokes) && record.skizze_strokes.length > 0
+    };
+}
+
+function backupZeitMerken(typ = 'vollstaendig') {
+    try {
+        localStorage.setItem('letztes_json_backup', JSON.stringify({ zeit: new Date().toISOString(), typ }));
+    } catch (e) {
+        console.warn('[Backup] Zeitpunkt konnte nicht gespeichert werden:', e);
     }
-    if (importiert === 0 && fehler > 0) throw new Error('Keine gültigen Datensätze');
-    return { importiert, fehler };
+}
+
+async function jsonPayloadErstellen(records, mitBilder = true) {
+    const exportRecords = mitBilder
+        ? await Promise.all(records.map(recordFuerExport))
+        : records.map(recordOhneBilder);
+    return {
+        schema_version: EXPORT_SCHEMA_VERSION,
+        app_version: APP_VERSION,
+        exported_at: new Date().toISOString(),
+        media_included: mitBilder,
+        records: exportRecords
+    };
+}
+
+async function aktuellenEntwurfSichern() {
+    try {
+        await Sketch.ready();
+        const payload = await jsonPayloadErstellen([Schacht.sammeln()], true);
+        payload.recovery_export = true;
+        downloadFile(JSON.stringify(payload, null, 2), 'application/json', `schachtprotokoll_entwurf_${dateiDatum()}.json`);
+        backupZeitMerken('entwurf');
+        App.toast('Aktuellen Entwurf als JSON gesichert.', 'warn');
+    } catch (error) {
+        console.error('[Backup] Entwurf konnte nicht gesichert werden:', error);
+        App.toast(`Entwurf konnte nicht gesichert werden: ${error.message || 'Unbekannter Fehler'}`, 'fehler');
+        throw error;
+    }
+}
+
+function datensatzSchluessel(record) {
+    const teile = [record?.gemeinde, record?.strasse, record?.nummer, record?.aufnahmedatum]
+        .map(value => String(value || '').trim().toLocaleLowerCase('de-CH'));
+    return teile[2] ? teile.join('|') : '';
 }
 
 const Schacht = (() => {
-    const PFLICHTFELDER = [];
+    const PFLICHTFELDER = ['ltg_richtung'];
 
     // Alle Formularfelder des Schachts (ID → direkt via _val/_set)
     const KOPFDATEN = ['gemeinde', 'strasse', 'nummer', 'parzelle', 'aufnahmedatum', 'visum'];
@@ -895,13 +1184,13 @@ const Schacht = (() => {
         ...KOPFDATEN,
         'koordinaten_e', 'koordinaten_n', 'koordinaten_z',
         // Schacht
-        'schacht_typ', 'schacht_material', 'schacht_dim', 'schacht_sohle',
-        'schacht_einstieg', 'schacht_eigentuemer', 'schacht_baujahr',
+        'schacht_typ', 'schacht_medium', 'schacht_material', 'schacht_dim', 'schacht_sohle',
+        'schacht_einstieg', 'schacht_einstieghilfe', 'schacht_eigentuemer', 'schacht_baujahr',
         // Deckel
         'deckel_form', 'deckel_dm', 'deckel_material', 'deckel_verschluss',
         'deckel_oberflaechenzulauf', 'deckel_zugaenglichkeit', 'deckel_baujahr',
         // Zustand
-        'zustand', 'notiz'
+        'zustand', 'notiz', 'skizze_beschreibung'
     ];
 
     // Alle Felder im Leitungs-Dialog
@@ -1021,7 +1310,83 @@ const Schacht = (() => {
         } else {
             const keineMaengel = row.querySelector('input[type="checkbox"][data-exklusiv="true"]');
             if (keineMaengel) keineMaengel.checked = false;
+            const gesamtzustand = document.getElementById('zustand');
+            if (gesamtzustand?.value === 'Keine Mängel') {
+                _set('zustand', '');
+                App.toast('Gesamtzustand «Keine Mängel» wurde entfernt.', 'warn');
+            }
         }
+    }
+
+    function gesamtzustandGeaendert() {
+        if (_val('zustand') !== 'Keine Mängel' || !_hatZustandsdaten({
+            zustandsliste: _zustandslisteSammeln(),
+            schadenstufe: _schadenstufeSammeln()
+        })) return;
+        _zustandZuruecksetzen();
+        App.toast('Detailmängel und Schadenstufe wurden zurückgesetzt.', 'warn');
+    }
+
+    function _zahl(value) {
+        const text = String(value ?? '').trim().replace(/['\s]/g, '').replace(',', '.');
+        if (!text) return null;
+        const zahl = Number(text);
+        return Number.isFinite(zahl) ? zahl : NaN;
+    }
+
+    function validieren(data) {
+        const fehler = [];
+        const add = (feld, meldung) => fehler.push({ feld, meldung });
+        if (!hatWert(data.gemeinde)) add('gemeinde', 'Gemeinde fehlt');
+        if (!hatWert(data.nummer)) add('nummer', 'Schacht-Nr. fehlt');
+        if (!hatWert(data.aufnahmedatum)) add('aufnahmedatum', 'Aufnahmedatum fehlt');
+
+        const aktuellesJahr = new Date().getFullYear() + 1;
+        [['deckel_baujahr', 'Baujahr Deckel'], ['schacht_baujahr', 'Baujahr Schacht']].forEach(([feld, label]) => {
+            if (!hatWert(data[feld])) return;
+            const jahr = Number(data[feld]);
+            if (!/^\d{4}$/.test(data[feld]) || jahr < 1800 || jahr > aktuellesJahr) add(feld, `${label} ist ungültig`);
+        });
+
+        const pruefeBereich = (feld, label, min, max) => {
+            if (!hatWert(data[feld])) return;
+            const zahl = _zahl(data[feld]);
+            if (!Number.isFinite(zahl) || zahl < min || zahl > max) add(feld, `${label} muss zwischen ${min} und ${max} liegen`);
+        };
+        pruefeBereich('koordinaten_z', 'Höhe', -500, 5000);
+        pruefeBereich('schacht_sohle', 'Sohlentiefe', 0, 5000);
+
+        const e = _zahl(data.koordinaten_e);
+        const n = _zahl(data.koordinaten_n);
+        if (e !== null || n !== null) {
+            if (!Number.isFinite(e) || e < 2000000 || e > 3000000) add('koordinaten_e', 'LV95-Koordinate E ist ungültig');
+            if (!Number.isFinite(n) || n < 1000000 || n > 1400000) add('koordinaten_n', 'LV95-Koordinate N ist ungültig');
+        }
+
+        (data.leitungen || []).forEach((leitung, index) => {
+            if (!hatWert(leitung.ltg_richtung)) add(null, `Leitung ${index + 1}: Richtung fehlt`);
+            const tiefe = _zahl(leitung.tiefe);
+            if (tiefe !== null && (!Number.isFinite(tiefe) || tiefe < 0 || tiefe > 30)) add(null, `Leitung ${index + 1}: Tiefe ist ungültig`);
+            const nennweite = _zahl(leitung.rdm);
+            if (nennweite !== null && (!Number.isFinite(nennweite) || nennweite <= 0 || nennweite > 5000)) add(null, `Leitung ${index + 1}: Nennweite ist ungültig`);
+        });
+        return fehler;
+    }
+
+    function validierungsfehlerAnzeigen(fehler) {
+        document.querySelectorAll('[data-fachfehler="true"]').forEach(el => {
+            el.classList.remove('fehler');
+            el.removeAttribute('data-fachfehler');
+            el.setCustomValidity?.('');
+        });
+        fehler.forEach(({ feld, meldung }) => {
+            const el = feld ? document.getElementById(feld) : null;
+            if (!el) return;
+            el.classList.add('fehler');
+            el.dataset.fachfehler = 'true';
+            el.setCustomValidity?.(meldung);
+            el.title = meldung;
+        });
     }
 
     function sammeln() {
@@ -1035,6 +1400,7 @@ const Schacht = (() => {
             zustandsliste: _zustandslisteSammeln(),
             schadenstufe: _schadenstufeSammeln(),
             skizze: Sketch.getDataURL(),
+            skizze_basis: Sketch.getBasisDataURL(),
             skizze_genutzt: Sketch.hasContent(),
             skizze_strokes: Sketch.getStrokes(),
             skizze_modus: Sketch.currentMode ? 'gitter' : 'skizze',
@@ -1054,7 +1420,7 @@ const Schacht = (() => {
         App.state.leitungsnummer = 1;
         (data.leitungen || []).forEach(l => _insertLeitungRow(l));
         const skizzenModus = data.skizze_modus === 'gitter' ? true : false;
-        Sketch.ladeSkizze(data.skizze, typeof data.skizze_genutzt === 'boolean' ? data.skizze_genutzt : undefined, data.skizze_strokes, skizzenModus);
+        Sketch.ladeSkizze(data.skizze, typeof data.skizze_genutzt === 'boolean' ? data.skizze_genutzt : undefined, data.skizze_strokes, skizzenModus, data.skizze_basis);
         fotosLeeren();
         (data.fotos || []).filter(Boolean).forEach(foto => fotoHinzufuegen(foto));
         kopfzeile();
@@ -1177,6 +1543,9 @@ const Schacht = (() => {
         kopfdatenBehalten,
         formularUmfangAnwenden,
         zustandsCheckboxGeaendert,
+        gesamtzustandGeaendert,
+        validieren,
+        validierungsfehlerAnzeigen,
         _insertLeitungRow,
         PFLICHTFELDER,
         DIALOG_FELDER
@@ -1246,8 +1615,30 @@ function serviceWorkerRegistrieren() {
         console.info('[App] Service Worker benötigt HTTPS oder localhost');
         return;
     }
+    let updateAngefordert = false;
+    const updateAnzeigen = worker => {
+        if (!worker || !navigator.serviceWorker.controller) return;
+        const banner = document.getElementById('update-banner');
+        const button = document.getElementById('updateNeuLaden');
+        if (banner) banner.hidden = false;
+        if (button) button.onclick = () => {
+            updateAngefordert = true;
+            worker.postMessage({ type: 'SKIP_WAITING' });
+        };
+    };
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (updateAngefordert) window.location.reload();
+    });
     navigator.serviceWorker.register('./serviceworker.js')
-        .then(() => console.log('[App] Service Worker installiert'))
+        .then(registration => {
+            updateAnzeigen(registration.waiting);
+            registration.addEventListener('updatefound', () => {
+                const worker = registration.installing;
+                worker?.addEventListener('statechange', () => {
+                    if (worker.state === 'installed') updateAnzeigen(worker);
+                });
+            });
+        })
         .catch(e => console.error('[App] Service Worker Fehler:', e));
 }
 
@@ -1258,6 +1649,7 @@ function serviceWorkerRegistrieren() {
 function dialogOeffnen(id) {
     const dlg = document.getElementById(id);
     if (!dlg) return;
+    dlg._rueckkehrFokus = document.activeElement;
     if (typeof dlg.showModal === 'function') {
         dlg.showModal();
     } else {
@@ -1265,6 +1657,7 @@ function dialogOeffnen(id) {
         dlg.classList.add('dialog-fallback-offen');
         document.body.classList.add('dialog-fallback-aktiv');
     }
+    requestAnimationFrame(() => dlg.querySelector('input, select, textarea, button, [tabindex="0"]')?.focus());
 }
 
 function dialogSchliessen(id) {
@@ -1277,6 +1670,9 @@ function dialogSchliessen(id) {
         dlg.classList.remove('dialog-fallback-offen');
         document.body.classList.remove('dialog-fallback-aktiv');
     }
+    const rueckkehr = dlg._rueckkehrFokus;
+    delete dlg._rueckkehrFokus;
+    requestAnimationFrame(() => rueckkehr?.focus?.());
 }
 
 function bestaetigen(frage) {
@@ -1314,9 +1710,8 @@ function heutigesDatum() {
 }
 
 async function neuerSchacht() {
-    clearTimeout(App.state.autoSaveTimer);
-    App.state.currentSchachtId = null;
-    App.state.dirty = false;
+    if (!await App.aenderungenSpeichern()) return;
+    App.datensatzWechseln();
     App.setStatus('Neuer Schacht');
     if (await bestaetigen('Kopfdaten für nächsten Schacht übernehmen?')) {
         Schacht.kopfdatenBehalten();
@@ -1349,8 +1744,9 @@ const PRINT_FELDER = {
         ['Zugänglichkeit', 'deckel_zugaenglichkeit'], ['Baujahr', 'deckel_baujahr']
     ],
     schacht: [
-        ['Typ', 'schacht_typ'], ['Material', 'schacht_material'], ['Dimension', 'schacht_dim'],
+        ['Typ', 'schacht_typ'], ['Medium', 'schacht_medium'], ['Material', 'schacht_material'], ['Dimension', 'schacht_dim'],
         ['Sohle', 'schacht_sohle'], ['Einstieg', 'schacht_einstieg'],
+        ['Einstieghilfe', 'schacht_einstieghilfe'],
         ['Eigentümer', 'schacht_eigentuemer'], ['Baujahr', 'schacht_baujahr']
     ]
 };
@@ -1477,6 +1873,8 @@ function printSummaryMedien(parent, data) {
         media.appendChild(wrap);
     });
     media.dataset.count = String(media.children.length);
+    const anzahl = media.children.length;
+    media.dataset.columns = String(anzahl === 1 ? 1 : (anzahl === 2 || anzahl === 4 ? 2 : (anzahl >= 5 ? 4 : 3)));
     section.appendChild(media);
     parent.appendChild(section);
     return true;
@@ -1493,6 +1891,7 @@ function printSummaryInhalt(parent, data) {
     }
     if (umfang.zustand) printSummarySection(parent, 'Zustand', zustandFuerDruck(data));
     printSummarySection(parent, 'Notiz', hatWert(data.notiz) ? [['Notiz', wertText(data.notiz)]] : []);
+    printSummarySection(parent, 'Skizzenbeschreibung', hatWert(data.skizze_beschreibung) ? [['Beschreibung', wertText(data.skizze_beschreibung)]] : []);
     printSummaryMedien(parent, data);
 }
 
@@ -1549,7 +1948,27 @@ function printSummaryEntfernen() {
     document.body.classList.remove('print-summary-active');
 }
 
-function printpdf() {
+async function warteAufDruckbilder(root, timeoutMs = 20000) {
+    const bilder = Array.from(root?.querySelectorAll('img') || []);
+    const laden = bilder.map(img => {
+        if (img.complete) return Promise.resolve(img.naturalWidth > 0);
+        return new Promise(resolve => {
+            img.addEventListener('load', () => resolve(true), { once: true });
+            img.addEventListener('error', () => resolve(false), { once: true });
+        });
+    });
+    const timeout = new Promise(resolve => setTimeout(() => resolve(null), timeoutMs));
+    const result = await Promise.race([Promise.all(laden), timeout]);
+    if (result === null) throw new Error(`Bilder wurden nicht innerhalb von ${Math.round(timeoutMs / 1000)} Sekunden geladen`);
+    const fehler = result.filter(ok => !ok).length;
+    if (fehler) throw new Error(`${fehler} Bild${fehler !== 1 ? 'er' : ''} konnte${fehler === 1 ? '' : 'n'} nicht geladen werden`);
+}
+
+async function printpdf() {
+    const liveData = Schacht.sammeln();
+    const prueffehler = Schacht.validieren(liveData);
+    Schacht.validierungsfehlerAnzeigen(prueffehler);
+    if (prueffehler.length && !await bestaetigen(`${prueffehler.length} Prüfhinweis${prueffehler.length !== 1 ? 'e' : ''} vorhanden. PDF trotzdem erstellen?`)) return;
     document.querySelectorAll('select').forEach(sel => sel.classList.toggle('wert-gewaehlt', sel.value !== ''));
     const dateInputs = document.querySelectorAll('input[type="date"]');
     dateInputs.forEach(el => {
@@ -1562,36 +1981,42 @@ function printpdf() {
     const parts = ['Schachtprotokoll', gemeinde, nummer].filter(Boolean);
     const titleEl = document.querySelector('title');
     const alterTitel = titleEl?.textContent || 'Schachtprotokoll';
-    const data = Schacht.sammeln();
-    printSummaryErstellen(data);
+    printSummaryErstellen(liveData);
+    try {
+        await warteAufDruckbilder(document.getElementById('printSummary'));
+    } catch (e) {
+        printSummaryEntfernen();
+        dateInputs.forEach(el => {
+            const datumTeile = el.value.split('.');
+            el.type = 'date';
+            el.value = datumTeile.length === 3 ? `${datumTeile[2]}-${datumTeile[1]}-${datumTeile[0]}` : '';
+        });
+        App.toast('PDF-Export abgebrochen: ' + e.message, 'fehler');
+        return;
+    }
+    let bereinigt = false;
     const cleanup = () => {
+        if (bereinigt) return;
+        bereinigt = true;
         printSummaryEntfernen();
         if (titleEl) titleEl.textContent = alterTitel;
         window.removeEventListener('afterprint', cleanup);
-        window.removeEventListener('focus', cleanup);
     };
     window.addEventListener('afterprint', cleanup);
-    window.addEventListener('focus', cleanup, { once: true });
     App.toast('Tipp: In Chrome → Mehr Einstellungen → «Kopf- und Fusszeilen» deaktivieren', 'info');
-    setTimeout(() => {
-        if (titleEl) titleEl.textContent = parts.join('_');
-        window.print();
-        dateInputs.forEach(el => {
-            const parts = el.value.split('.');
-            el.type = 'date';
-            el.value = parts.length === 3 ? `${parts[2]}-${parts[1]}-${parts[0]}` : '';
-        });
-    }, 400);
+    if (titleEl) titleEl.textContent = parts.join('_');
+    window.print();
+    dateInputs.forEach(el => {
+        const datumTeile = el.value.split('.');
+        el.type = 'date';
+        el.value = datumTeile.length === 3 ? `${datumTeile[2]}-${datumTeile[1]}-${datumTeile[0]}` : '';
+    });
+    setTimeout(cleanup, 60000);
 }
 
 async function exportAllePDF() {
     try {
-        clearTimeout(App.state.autoSaveTimer);
-        if (App.state.dirty && App.state.storageAvailable) {
-            await App.autoSpeichern();
-        } else if (App.state.dirty) {
-            App.toast('Aktuelle Änderungen sind nicht gespeichert und fehlen im Sammel-PDF.', 'warn');
-        }
+        if (!await App.aenderungenSpeichern()) return;
 
         const alle = await DB.alle();
         if (!alle.length) {
@@ -1599,24 +2024,28 @@ async function exportAllePDF() {
             return;
         }
 
+        const fotoAnzahl = alle.reduce((summe, record) => summe + (record.fotos || []).length, 0);
+        if (fotoAnzahl > 100 && !await bestaetigen(`${fotoAnzahl} Fotos können ein sehr grosses PDF erzeugen. Fortfahren?`)) return;
+
         alle.sort((a, b) => (b.geaendert_am || '').localeCompare(a.geaendert_am || ''));
         const titleEl = document.querySelector('title');
         const alterTitel = titleEl?.textContent || 'Schachtprotokoll';
         printSummaryAlleErstellen(alle);
+        await warteAufDruckbilder(document.getElementById('printSummary'), 30000);
 
+        let bereinigt = false;
         const cleanup = () => {
+            if (bereinigt) return;
+            bereinigt = true;
             printSummaryEntfernen();
             if (titleEl) titleEl.textContent = alterTitel;
             window.removeEventListener('afterprint', cleanup);
-            window.removeEventListener('focus', cleanup);
         };
         window.addEventListener('afterprint', cleanup);
-        window.addEventListener('focus', cleanup, { once: true });
         App.toast('Alle gespeicherten Schächte werden für den PDF-Druck vorbereitet.', 'info');
-        setTimeout(() => {
-            if (titleEl) titleEl.textContent = `Schachtprotokolle_alle_${dateiDatum()}`;
-            window.print();
-        }, 400);
+        if (titleEl) titleEl.textContent = `Schachtprotokolle_alle_${dateiDatum()}`;
+        window.print();
+        setTimeout(cleanup, 60000);
     } catch (e) {
         printSummaryEntfernen();
         App.toast('PDF-Export fehlgeschlagen: ' + e.message, 'fehler');
@@ -1634,7 +2063,7 @@ function downloadBlob(blob, dateiname) {
     a.href = url;
     a.download = dateiname;
     a.click();
-    URL.revokeObjectURL(url);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 function dateiDatum() {
@@ -1661,12 +2090,6 @@ function mediumEndung(medium) {
     if (mime === 'image/png') return 'png';
     if (mime === 'image/webp') return 'webp';
     return 'jpg';
-}
-
-async function mediumZuBytes(medium) {
-    if (istBlob(medium)) return new Uint8Array(await medium.arrayBuffer());
-    if (istDataUrl(medium)) return window.SchachtZip.dataUrlToBytes(medium);
-    return new Uint8Array();
 }
 
 function bildAusDataUrl(dataUrl) {
@@ -1714,10 +2137,6 @@ function skizzeDefaultCanvas(width, height, gitter = false) {
     return canvas;
 }
 
-function skizzeDefaultDataUrl(width, height, gitter = false) {
-    return skizzeDefaultCanvas(width, height, gitter).toDataURL('image/png');
-}
-
 function canvasPixelgleich(a, b) {
     if (a.width !== b.width || a.height !== b.height) return false;
     const da = a.getContext('2d').getImageData(0, 0, a.width, a.height).data;
@@ -1754,79 +2173,25 @@ async function recordHatSkizze(record) {
 }
 
 function schachtOrdner(record, index) {
-    const id = dateinameSicher(record.id || index + 1);
-    return `schacht_${id}`;
+    const bezeichnung = record.nummer || record.id || index + 1;
+    return `schacht_${dateinameSicher(bezeichnung)}`;
 }
 
-async function exportAlleCSV() {
-    try {
-        const alle = await DB.alle();
-        if (!alle.length) { App.toast('Keine gespeicherten Schächte vorhanden.', 'warn'); return; }
-        if (!CSV?.stringify) throw new Error('CSV-Modul nicht geladen');
-
-        // ── Blatt 1: Schächte-Übersicht ──
-        const kopfFelder = [
-            ['ID','id'], ['Datum','datum'], ['Firma','firma'],
-            ['Gemeinde','gemeinde'], ['Strasse','strasse'], ['Nr','nummer'],
-            ['Parzelle','parzelle'], ['Aufnahmedatum','aufnahmedatum'], ['Visum','visum'],
-            ['Koordinaten E','koordinaten_e'], ['Koordinaten N','koordinaten_n'], ['Koordinaten Z','koordinaten_z'],
-            ['Schacht Typ','schacht_typ'], ['Schacht Material','schacht_material'],
-            ['Schacht Dim','schacht_dim'], ['Sohle','schacht_sohle'],
-            ['Einstieg','schacht_einstieg'], ['Eigentümer Schacht','schacht_eigentuemer'],
-            ['Baujahr Schacht','schacht_baujahr'],
-            ['Deckel Form','deckel_form'], ['Deckel DM','deckel_dm'],
-            ['Deckel Material','deckel_material'], ['Verschluss','deckel_verschluss'],
-            ['Oberflächenzulauf','deckel_oberflaechenzulauf'],
-            ['Zugänglichkeit','deckel_zugaenglichkeit'], ['Baujahr Deckel','deckel_baujahr'],
-            ['Zustand','zustand'], ['Notiz','notiz'],
-            ...FORMULAR_UMFANG_KEYS.map(key => [
-                `Umfang ${FORMULAR_UMFANG_LABELS[key]}`,
-                s => boolZuText(formularUmfangNormalisieren(s.formular_umfang)[key])
-            ]),
-            ['Schadenstufe','schadenstufe'],
-            ...ZUSTAND_GRUPPEN.map(gruppe => [
-                `Zustand ${gruppe.label}`,
-                s => zustandsOptionenText(s.zustandsliste, gruppe.key)
-            ]),
-            ['Erstellt am','erstellt_am'], ['Geändert am','geaendert_am']
-        ];
-
-        const schachtRows = [
-            kopfFelder.map(([label]) => label),
-            ...alle.map(s => kopfFelder.map(([, key]) => typeof key === 'function' ? key(s) : s[key]))
-        ];
-
-        // ── Blatt 2: Leitungen aller Schächte ──
-        const ltgHeader = ['Schacht-ID','Gemeinde','Strasse','Nr',
-            'Ltg-Nr','Richtung','Tiefe','Profil','Material','NW','Funktion',
-            'Art','Betrieb','Hydraulik','Notiz'];
-        const ltgRows = [ltgHeader];
-        alle.forEach(s => {
-            (s.leitungen || []).forEach(l => ltgRows.push([
-                s.id, s.gemeinde, s.strasse, s.nummer,
-                l.nr, l.ltg_richtung, l.tiefe, l.ltg_profil, l.rmat, l.rdm,
-                l.ltg_funktion, l.ltg_art, l.ltg_betrieb, l.ltg_hydraulik,
-                l.lnotiz
-            ]));
-        });
-
-        const toCSV = rows => CSV.stringify(rows);
-        const inhalt = [
-            'SCHÄCHTE', toCSV(schachtRows),
-            '', 'LEITUNGEN', toCSV(ltgRows)
-        ].join('\r\n');
-
-        downloadFile('\uFEFF' + inhalt, 'text/csv;charset=utf-8', `schachtprotokoll_alle_${new Date().toLocaleDateString('de-CH').replace(/\./g,'-')}.csv`);
-    } catch (e) {
-        App.toast('CSV-Export fehlgeschlagen: ' + e.message, 'error');
-    }
-}
 
 async function exportBilderZIP() {
     try {
+        if (!await App.aenderungenSpeichern()) return;
         const alle = await DB.alle();
         if (!alle.length) { App.toast('Keine gespeicherten Schächte vorhanden.', 'warn'); return; }
         if (!window.SchachtZip?.ZipWriter) throw new Error('ZIP-Writer nicht geladen');
+        const medienBytes = alle.reduce((summe, record) => {
+            const fotoBytes = (record.fotos || []).reduce((teil, foto) => teil + (istBlob(foto) ? foto.size : Math.ceil(String(foto || '').length * 0.75)), 0);
+            const skizzenBytes = record.skizze_genutzt ? Math.ceil(String(record.skizze || '').length * 0.75) : 0;
+            return summe + fotoBytes + skizzenBytes;
+        }, 0);
+        if (medienBytes > EXPORT_MAX_MEDIEN_BYTES) {
+            throw new Error(`Medienumfang ${Math.round(medienBytes / 1024 / 1024)} MB überschreitet die Grenze von ${Math.round(EXPORT_MAX_MEDIEN_BYTES / 1024 / 1024)} MB`);
+        }
         const zip = new window.SchachtZip.ZipWriter();
         const manifest = {
             schema_version: 1,
@@ -1844,9 +2209,9 @@ async function exportBilderZIP() {
                 const mime = mediumMime(foto);
                 const endung = mediumEndung(foto);
                 const dateiname = `${ordner}/foto_${fotoIndex + 1}.${endung}`;
-                const bytes = await mediumZuBytes(foto);
-                if (!bytes.length) continue;
-                zip.file(dateiname, bytes);
+                const byteLaenge = istBlob(foto) ? foto.size : Math.ceil(String(foto || '').length * 0.75);
+                if (!byteLaenge) continue;
+                zip.file(dateiname, istBlob(foto) ? foto : window.SchachtZip.dataUrlToBytes(foto));
                 manifest.files.push({
                     schacht_id: s.id,
                     gemeinde: s.gemeinde || '',
@@ -1855,7 +2220,7 @@ async function exportBilderZIP() {
                     typ: 'foto',
                     dateiname,
                     mime_type: mime,
-                    byte_laenge: bytes.length,
+                    byte_laenge: byteLaenge,
                     speicherformat: istBlob(foto) ? 'blob' : 'data_url'
                 });
             }
@@ -1884,131 +2249,85 @@ async function exportBilderZIP() {
     }
 }
 
-async function exportAlleJSON() {
+async function exportAlleJSON(mitBilder = true) {
     try {
+        if (App.state.dirty && !App.state.storageAvailable) {
+            await aktuellenEntwurfSichern();
+            return;
+        }
+        if (!await App.aenderungenSpeichern()) return;
         const alle = await DB.alle();
         if (!alle.length) { App.toast('Keine gespeicherten Schächte vorhanden.', 'warn'); return; }
-        const records = await Promise.all(alle.map(recordFuerExport));
-        const payload = {
-            schema_version: EXPORT_SCHEMA_VERSION,
-            app_version: APP_VERSION,
-            exported_at: new Date().toISOString(),
-            records
-        };
-        downloadFile(JSON.stringify(payload, null, 2), 'application/json', `schachtprotokoll_alle_${new Date().toLocaleDateString('de-CH').replace(/\./g,'-')}.json`);
+        const payload = await jsonPayloadErstellen(alle, mitBilder);
+        const zusatz = mitBilder ? 'alle' : 'ohne_bilder';
+        downloadFile(JSON.stringify(payload, null, 2), 'application/json', `schachtprotokoll_${zusatz}_${dateiDatum()}.json`);
+        backupZeitMerken(mitBilder ? 'vollstaendig' : 'ohne_bilder');
+        App.toast(`${alle.length} Schächte als JSON${mitBilder ? '' : ' ohne Bilder'} exportiert.`, 'success');
     } catch (e) {
+        App.setStatus('JSON-Export fehlgeschlagen');
         App.toast('JSON-Export fehlgeschlagen: ' + e.message, 'error');
     }
 }
 
-async function exportAlleXML() {
-    try {
-        const alle = await DB.alle();
-        if (!alle.length) { App.toast('Keine gespeicherten Schächte vorhanden.', 'warn'); return; }
-        const exportRecords = await Promise.all(alle.map(recordFuerExport));
-        const esc = v => String(v ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-        const escAttr = v => esc(v).replace(/"/g, '&quot;');
-        const tag = (n, v, indent='    ') => `${indent}<${n}>${esc(v)}</${n}>`;
-
-        const schachten = exportRecords.map(s => {
-            const leitungenXML = (s.leitungen || []).map(l => [
-                '      <leitung>',
-                tag('nr', l.nr, '        '), tag('richtung', l.ltg_richtung, '        '),
-                tag('tiefe', l.tiefe, '        '), tag('profil', l.ltg_profil, '        '),
-                tag('material', l.rmat, '        '), tag('nennweite', l.rdm, '        '),
-                tag('funktion', l.ltg_funktion, '        '), tag('art', l.ltg_art, '        '),
-                tag('betrieb', l.ltg_betrieb, '        '), tag('hydraulik', l.ltg_hydraulik, '        '),
-                tag('notiz', l.lnotiz, '        '),
-                '      </leitung>'
-            ].join('\n')).join('\n');
-            const umfang = formularUmfangNormalisieren(s.formular_umfang);
-            const umfangXML = FORMULAR_UMFANG_KEYS.map(key => tag(key, umfang[key] ? 'true' : 'false', '      ')).join('\n');
-            const zustandsXML = ZUSTAND_GRUPPEN.map(gruppe => {
-                const optionenXML = (s.zustandsliste?.[gruppe.key] || [])
-                    .map(option => tag('option', option, '        '))
-                    .join('\n');
-                return [
-                    `      <gruppe name="${escAttr(gruppe.key)}">`,
-                    optionenXML,
-                    '      </gruppe>'
-                ].join('\n');
-            }).join('\n');
-            const fotosXML = (s.fotos || []).filter(Boolean)
-                .map(foto => [
-                    '      <foto>',
-                    esc(foto),
-                    '      </foto>'
-                ].join('\n'))
-                .join('\n');
-            const skizzeStrokes = Array.isArray(s.skizze_strokes) ? JSON.stringify(s.skizze_strokes) : '';
-            return [
-                `  <schacht id="${escAttr(s.id)}">`,
-                tag('datum', s.datum), tag('firma', s.firma),
-                tag('gemeinde', s.gemeinde), tag('strasse', s.strasse), tag('nummer', s.nummer),
-                tag('parzelle', s.parzelle), tag('aufnahmedatum', s.aufnahmedatum), tag('visum', s.visum),
-                tag('koordinaten_e', s.koordinaten_e), tag('koordinaten_n', s.koordinaten_n), tag('koordinaten_z', s.koordinaten_z),
-                tag('deckel_form', s.deckel_form), tag('deckel_dm', s.deckel_dm),
-                tag('deckel_material', s.deckel_material), tag('deckel_verschluss', s.deckel_verschluss),
-                tag('deckel_oberflaechenzulauf', s.deckel_oberflaechenzulauf),
-                tag('deckel_zugaenglichkeit', s.deckel_zugaenglichkeit), tag('deckel_baujahr', s.deckel_baujahr),
-                tag('schacht_typ', s.schacht_typ), tag('schacht_material', s.schacht_material),
-                tag('schacht_dim', s.schacht_dim), tag('schacht_sohle', s.schacht_sohle),
-                tag('schacht_einstieg', s.schacht_einstieg), tag('schacht_eigentuemer', s.schacht_eigentuemer),
-                tag('schacht_baujahr', s.schacht_baujahr), tag('zustand', s.zustand), tag('notiz', s.notiz),
-                '    <formular_umfang>',
-                umfangXML,
-                '    </formular_umfang>',
-                tag('schadenstufe', s.schadenstufe),
-                '    <zustandsliste>',
-                zustandsXML,
-                '    </zustandsliste>',
-                tag('skizze', s.skizze),
-                tag('skizze_genutzt', typeof s.skizze_genutzt === 'boolean' ? String(s.skizze_genutzt) : ''),
-                tag('skizze_modus', s.skizze_modus),
-                tag('skizze_strokes', skizzeStrokes),
-                '    <fotos>',
-                fotosXML,
-                '    </fotos>',
-                tag('erstellt_am', s.erstellt_am), tag('geaendert_am', s.geaendert_am),
-                '    <leitungen>',
-                leitungenXML,
-                '    </leitungen>',
-                '  </schacht>'
-            ].join('\n');
-        }).join('\n');
-
-        const xml = `<?xml version="1.0" encoding="UTF-8"?>\n<schachtprotokoll>\n${schachten}\n</schachtprotokoll>`;
-        downloadFile(xml, 'application/xml;charset=utf-8', `schachtprotokoll_alle_${new Date().toLocaleDateString('de-CH').replace(/\./g,'-')}.xml`);
-    } catch (e) {
-        App.toast('XML-Export fehlgeschlagen: ' + e.message, 'error');
-    }
-}
 
 async function importJSON(input) {
     const file = input.files[0];
     if (!file) return;
     input.value = '';
     try {
+        if (!await App.aenderungenSpeichern()) return;
+        if (file.size > IMPORT_MAX_DATEIGROESSE) throw new Error(`Datei ist grösser als ${Math.round(IMPORT_MAX_DATEIGROESSE / 1024 / 1024)} MB`);
+        if (file.size > IMPORT_GROSS_WARNUNG && !await bestaetigen(`Die JSON-Datei ist ${Math.round(file.size / 1024 / 1024)} MB gross und benötigt viel Arbeitsspeicher. Fortfahren?`)) return;
         const text = await file.text();
         const daten = JSON.parse(text);
-        const result = await importRecordsSpeichern(jsonImportRecords(daten));
-        const zusatz = result.fehler ? `, ${result.fehler} übersprungen` : '';
-        App.toast(`${result.importiert} Schacht${result.importiert !== 1 ? 'e' : ''} importiert${zusatz}.`, 'success');
+        if (daten?.schema_version && (!Number.isInteger(Number(daten.schema_version)) || Number(daten.schema_version) < 1)) {
+            throw new Error('Ungültige Schema-Version');
+        }
+        if (daten?.schema_version && Number(daten.schema_version) > EXPORT_SCHEMA_VERSION) {
+            throw new Error(`Schema-Version ${daten.schema_version} wird nicht unterstützt`);
+        }
+        const records = jsonImportRecords(daten);
+        const bezeichnung = records.length === 1 ? '1 Datensatz' : `${records.length} Datensätze`;
+        const schluessel = records.map(datensatzSchluessel).filter(Boolean);
+        if (new Set(schluessel).size !== schluessel.length) throw new Error('Import enthält doppelte Schachtbezeichnungen mit gleichem Aufnahmedatum');
+        const bestehend = await DB.alle();
+        const bestehendNachSchluessel = new Map(bestehend.map(record => [datensatzSchluessel(record), record]).filter(([key]) => key));
+        const konflikte = records.map(record => bestehendNachSchluessel.get(datensatzSchluessel(record)) || null);
+        const konfliktAnzahl = konflikte.filter(Boolean).length;
+        let ziele = [];
+        if (konfliktAnzahl > 0) {
+            if (await bestaetigen(`${konfliktAnzahl} bestehende Schächte stimmen in Gemeinde, Strasse, Nummer und Datum überein. Bestehende Datensätze ersetzen?`)) {
+                ziele = konflikte;
+            } else if (!await bestaetigen(`${bezeichnung} stattdessen als neue Kopien importieren?`)) {
+                return;
+            }
+        } else if (!await bestaetigen(`${bezeichnung} importieren?`)) {
+            return;
+        }
+        const result = await importRecordsSpeichern(records, ziele);
+        const aktualisiert = result.aktualisiert ? `, ${result.aktualisiert} aktualisiert` : '';
+        App.toast(`${result.importiert} Schacht${result.importiert !== 1 ? 'e' : ''} importiert${aktualisiert}.`, 'success');
         schachtListeAktualisieren();
     } catch (e) {
+        App.setStatus('JSON-Import fehlgeschlagen');
         App.toast('Import fehlgeschlagen: ' + e.message, 'error');
     }
 }
 
 async function alleSchachteLöschen() {
-    if (!await bestaetigen('Alle gespeicherten Schächte unwiderruflich löschen?')) return;
-    clearTimeout(App.state.autoSaveTimer);
+    if (!await App.aenderungenSpeichern()) return;
+    if (!await bestaetigen('Vor dem Löschen vollständiges JSON-Backup erstellen?')) return;
     try {
         const alle = await DB.alle();
-        await Promise.all(alle.map(s => DB.loeschen(s.id)));
-        App.state.currentSchachtId = null;
+        if (!alle.length) { App.toast('Keine gespeicherten Schächte vorhanden.', 'warn'); return; }
+        const payload = await jsonPayloadErstellen(alle, true);
+        downloadFile(JSON.stringify(payload, null, 2), 'application/json', `schachtprotokoll_backup_vor_loeschen_${dateiDatum()}.json`);
+        backupZeitMerken('vollstaendig');
+        if (!await bestaetigen('Backup wurde heruntergeladen. Alle Schächte jetzt unwiderruflich löschen?')) return;
+        await DB.alleLoeschen();
+        App.datensatzWechseln();
         Schacht.zuruecksetzen();
-        App.setStatus('Cache geleert');
+        App.setStatus('Datenbank geleert');
         App.toast(`${alle.length} Schacht${alle.length !== 1 ? 'e' : ''} gelöscht.`, 'success');
         schachtListeAktualisieren();
     } catch (e) {
@@ -2016,183 +2335,6 @@ async function alleSchachteLöschen() {
     }
 }
 
-async function importCSV(input) {
-    const file = input.files[0];
-    if (!file) return;
-    input.value = '';
-    try {
-        if (!CSV?.parse) throw new Error('CSV-Modul nicht geladen');
-        const text = await file.text();
-        const rows = CSV.parse(text).filter(row => row.some(cell => String(cell).trim() !== ''));
-        const abschnitt = row => String(row[0] || '').trim().toUpperCase().replace(/Ä/g, 'A');
-        const schachtStart = rows.findIndex(row => abschnitt(row) === 'SCHACHTE');
-        const ltgStart = rows.findIndex(row => abschnitt(row) === 'LEITUNGEN');
-        if (schachtStart === -1) throw new Error('Ungültiges CSV-Format (kein SCHÄCHTE-Abschnitt)');
-
-        const schachtRows = rows.slice(schachtStart + 1, ltgStart !== -1 ? ltgStart : undefined);
-        if (schachtRows.length < 2) throw new Error('Keine Datensätze im CSV');
-        const headers = schachtRows[0];
-
-        const ltgRows = ltgStart !== -1 ? rows.slice(ltgStart + 1) : [];
-        const ltgHeaders = ltgRows.length > 0 ? ltgRows[0] : [];
-        const ltgData = ltgRows.slice(1).map(vals => {
-            return Object.fromEntries(ltgHeaders.map((h, i) => [h, vals[i] ?? '']));
-        });
-
-        // Map German header labels back to field keys
-        const labelZuFeld = {
-            'ID':'id','Datum':'datum','Firma':'firma','Gemeinde':'gemeinde','Strasse':'strasse',
-            'Nr':'nummer','Parzelle':'parzelle',
-            'Aufnahmedatum':'aufnahmedatum','Visum':'visum',
-            'Koordinaten E':'koordinaten_e','Koordinaten N':'koordinaten_n','Koordinaten Z':'koordinaten_z',
-            'Schacht Typ':'schacht_typ','Schacht Material':'schacht_material',
-            'Schacht Dim':'schacht_dim','Sohle':'schacht_sohle','Einstieg':'schacht_einstieg',
-            'Eigentümer Schacht':'schacht_eigentuemer','Baujahr Schacht':'schacht_baujahr',
-            'Deckel Form':'deckel_form','Deckel DM':'deckel_dm','Deckel Material':'deckel_material',
-            'Verschluss':'deckel_verschluss','Oberflächenzulauf':'deckel_oberflaechenzulauf',
-            'Zugänglichkeit':'deckel_zugaenglichkeit','Baujahr Deckel':'deckel_baujahr',
-            'Zustand':'zustand','Notiz':'notiz',
-            'Erstellt am':'erstellt_am','Geändert am':'geaendert_am'
-        };
-
-        const records = [];
-        for (const vals of schachtRows.slice(1)) {
-            const s = {};
-            const wert = label => {
-                const idx = headers.indexOf(label);
-                return idx >= 0 ? (vals[idx] ?? '') : '';
-            };
-            headers.forEach((h, i) => { const k = labelZuFeld[h]; if (k && k !== 'id') s[k] = vals[i] ?? ''; });
-            const umfang = {};
-            let hatUmfang = false;
-            FORMULAR_UMFANG_KEYS.forEach(key => {
-                const label = `Umfang ${FORMULAR_UMFANG_LABELS[key]}`;
-                if (headers.includes(label)) {
-                    hatUmfang = true;
-                    umfang[key] = textZuBool(wert(label), DEFAULT_FORMULAR_UMFANG[key]);
-                }
-            });
-            if (hatUmfang) s.formular_umfang = formularUmfangNormalisieren(umfang);
-            s.schadenstufe = wert('Schadenstufe') || s.schadenstufe || '';
-            const zustandsliste = {};
-            ZUSTAND_GRUPPEN.forEach(gruppe => {
-                const optionen = zustandsOptionenAusText(wert(`Zustand ${gruppe.label}`));
-                if (optionen.length > 0) zustandsliste[gruppe.key] = optionen;
-            });
-            if (Object.keys(zustandsliste).length > 0) s.zustandsliste = zustandsliste;
-            const idIdx = headers.indexOf('ID');
-            const csvId = idIdx >= 0 ? vals[idIdx] : '';
-            s.leitungen = ltgData
-                .filter(l => l['Schacht-ID'] === csvId)
-                .map(l => ({
-                    nr: l['Ltg-Nr'], ltg_richtung: l['Richtung'], tiefe: l['Tiefe'],
-                    ltg_profil: l['Profil'], rmat: l['Material'], rdm: l['NW'],
-                    ltg_funktion: l['Funktion'], ltg_art: l['Art'], ltg_betrieb: l['Betrieb'],
-                    ltg_hydraulik: l['Hydraulik'], lnotiz: l['Notiz']
-                }));
-            records.push(s);
-        }
-        const result = await importRecordsSpeichern(records);
-        const zusatz = result.fehler ? `, ${result.fehler} übersprungen` : '';
-        App.toast(`${result.importiert} Schacht${result.importiert !== 1 ? 'e' : ''} importiert${zusatz}.`, 'success');
-        schachtListeAktualisieren();
-    } catch (e) {
-        App.toast('CSV-Import fehlgeschlagen: ' + e.message, 'error');
-    }
-}
-
-async function importXML(input) {
-    const file = input.files[0];
-    if (!file) return;
-    input.value = '';
-    try {
-        const text = await file.text();
-        const parser = new DOMParser();
-        const doc = parser.parseFromString(text, 'application/xml');
-        const parseError = doc.querySelector('parsererror');
-        if (parseError) throw new Error('Ungültiges XML');
-
-        const txt = el => el ? el.textContent.trim() : '';
-        const schachten = doc.querySelectorAll('schacht');
-        if (!schachten.length) throw new Error('Keine <schacht>-Elemente gefunden');
-
-        const records = [];
-        for (const node of schachten) {
-            const g = name => txt(node.querySelector(name));
-            const s = {
-                datum: g('datum'), firma: g('firma'),
-                gemeinde: g('gemeinde'), strasse: g('strasse'), nummer: g('nummer'),
-                gis: g('gis'), feld: g('feld'), parzelle: g('parzelle'),
-                aufnahmedatum: g('aufnahmedatum'), visum: g('visum'),
-                koordinaten_e: g('koordinaten_e'), koordinaten_n: g('koordinaten_n'), koordinaten_z: g('koordinaten_z'),
-                schacht_typ: g('schacht_typ') || g('typ'),
-                schacht_material: g('schacht_material') || g('material'),
-                schacht_dim: g('schacht_dim') || g('dimension'),
-                schacht_sohle: g('schacht_sohle') || g('sohle'),
-                schacht_einstieg: g('schacht_einstieg') || g('einstieg'),
-                schacht_eigentuemer: g('schacht_eigentuemer') || g('eigentuemer'),
-                schacht_baujahr: g('schacht_baujahr') || g('baujahr'),
-                deckel_form: g('deckel_form'), deckel_dm: g('deckel_dm'),
-                deckel_material: g('deckel_material'), deckel_verschluss: g('deckel_verschluss'),
-                deckel_oberflaechenzulauf: g('deckel_oberflaechenzulauf'),
-                deckel_zugaenglichkeit: g('deckel_zugaenglichkeit'), deckel_baujahr: g('deckel_baujahr'),
-                zustand: g('zustand') || g('bewertung'), notiz: g('notiz'),
-                system: g('system'), ks_typ: g('ks_typ'), rueckstau: g('rueckstau'),
-                versickerung: g('versickerung'), dichtheit_geprueft: g('dichtheit_geprueft'),
-                dichtheit_ergebnis: g('dichtheit_ergebnis'), dichtheit_datum: g('dichtheit_datum'),
-                skizze: g('skizze'),
-                skizze_modus: g('skizze_modus'),
-                fotos: Array.from(node.querySelectorAll('fotos > foto')).map(foto => txt(foto)).filter(Boolean),
-                leitungen: Array.from(node.querySelectorAll('leitung')).map(l => {
-                    const lv = n => txt(l.querySelector(n));
-                    return {
-                        nr: lv('nr'), ltg_richtung: lv('richtung'), tiefe: lv('tiefe'),
-                        ltg_profil: lv('profil'), rmat: lv('material'), rdm: lv('nennweite'),
-                        ltg_funktion: lv('funktion'), ltg_art: lv('art'), ltg_betrieb: lv('betrieb'),
-                        ltg_hydraulik: lv('hydraulik'), lnotiz: lv('notiz')
-                    };
-                })
-            };
-            const skizzeGenutzt = g('skizze_genutzt');
-            if (skizzeGenutzt) s.skizze_genutzt = textZuBool(skizzeGenutzt, false);
-            const skizzeStrokes = g('skizze_strokes');
-            if (skizzeStrokes) {
-                try {
-                    const parsed = JSON.parse(skizzeStrokes);
-                    if (Array.isArray(parsed)) s.skizze_strokes = parsed;
-                } catch (e) {
-                    console.warn('[Import] Skizzen-Striche im XML ignoriert:', e);
-                }
-            }
-            const umfangNode = node.querySelector('formular_umfang');
-            const umfang = {};
-            let hatUmfang = false;
-            FORMULAR_UMFANG_KEYS.forEach(key => {
-                const value = txt(umfangNode?.querySelector(key));
-                if (value) {
-                    hatUmfang = true;
-                    umfang[key] = textZuBool(value, DEFAULT_FORMULAR_UMFANG[key]);
-                }
-            });
-            if (hatUmfang) s.formular_umfang = formularUmfangNormalisieren(umfang);
-            s.schadenstufe = g('schadenstufe');
-            const zustandsliste = {};
-            node.querySelectorAll('zustandsliste > gruppe').forEach(gruppeNode => {
-                const key = gruppeNode.getAttribute('name');
-                const optionen = Array.from(gruppeNode.querySelectorAll('option')).map(option => txt(option)).filter(Boolean);
-                if (key && optionen.length > 0) zustandsliste[key] = optionen;
-            });
-            if (Object.keys(zustandsliste).length > 0) s.zustandsliste = zustandsliste;
-            records.push(s);
-        }
-        const result = await importRecordsSpeichern(records);
-        const zusatz = result.fehler ? `, ${result.fehler} übersprungen` : '';
-        App.toast(`${result.importiert} Schacht${result.importiert !== 1 ? 'e' : ''} importiert${zusatz}.`, 'success');
-        schachtListeAktualisieren();
-    } catch (e) {
-        App.toast('XML-Import fehlgeschlagen: ' + e.message, 'error');
-    }
-}
 
 function updateAuftrag() {
     ['gemeinde', 'strasse'].forEach(id => {
@@ -2218,10 +2360,18 @@ function koordinatenAktualisieren() {
     const n = document.getElementById('koordinaten_n')?.value.replace(/['\s]/g, '');
     const el = document.getElementById('karte');
     if (!el) return;
-    if (e && n) {
-        el.href = `https://map.geo.admin.ch/?E=${e}&N=${n}&zoom=10`;
+    const eZahl = Number(e);
+    const nZahl = Number(n);
+    const gueltig = Number.isFinite(eZahl) && Number.isFinite(nZahl) &&
+        eZahl >= 2000000 && eZahl <= 3000000 && nZahl >= 1000000 && nZahl <= 1400000;
+    if (gueltig) {
+        el.href = `https://map.geo.admin.ch/?E=${encodeURIComponent(e)}&N=${encodeURIComponent(n)}&zoom=10`;
+        el.removeAttribute('aria-disabled');
+        el.title = 'Koordinaten auf map.geo.admin.ch öffnen';
     } else {
         el.href = 'https://map.geo.admin.ch/';
+        el.setAttribute('aria-disabled', 'true');
+        el.title = e || n ? 'LV95-Koordinaten sind unvollständig oder ungültig' : 'LV95-Koordinaten erfassen';
     }
 }
 
@@ -2247,7 +2397,9 @@ function bildElementAusDatei(file) {
 }
 
 async function fotoDateiKomprimieren(file) {
+    if (file.size > FOTO_MAX_DATEIGROESSE) throw new Error('Foto ist zu gross');
     const img = await bildElementAusDatei(file);
+    if (img.naturalWidth * img.naturalHeight > FOTO_MAX_PIXEL) throw new Error('Foto hat zu viele Bildpunkte');
     const ratio = Math.min(1, FOTO_MAX_KANTE / Math.max(img.naturalWidth, img.naturalHeight));
     const width = Math.max(1, Math.round(img.naturalWidth * ratio));
     const height = Math.max(1, Math.round(img.naturalHeight * ratio));
@@ -2326,10 +2478,17 @@ async function bildAuswahl() {
     const files = Array.from(input?.files || []);
     if (!files.length) return;
     input.value = '';
-    const bildDateien = files.filter(file => /^image\//.test(file.type));
+    const vorhandeneFotos = document.querySelectorAll('#fotos .foto-wrapper').length;
+    const freiePlaetze = Math.max(0, FOTO_MAX_ANZAHL - vorhandeneFotos);
+    if (freiePlaetze === 0) {
+        App.toast(`Maximal ${FOTO_MAX_ANZAHL} Fotos pro Schacht.`, 'warn');
+        return;
+    }
+    const bildDateien = files.filter(file => /^image\/(jpeg|png|webp)$/i.test(file.type)).slice(0, freiePlaetze);
     if (!bildDateien.length) { App.toast('Datei nicht unterstützt', 'fehler'); return; }
     let hinzugefuegt = 0;
     let fehler = files.length - bildDateien.length;
+    const fehlerDetails = [];
     for (const file of bildDateien) {
         try {
             const blob = await fotoDateiKomprimieren(file);
@@ -2337,6 +2496,7 @@ async function bildAuswahl() {
             hinzugefuegt++;
         } catch (e) {
             fehler++;
+            fehlerDetails.push(`${file.name}: ${e.message}`);
             console.warn('[Fotos] Foto konnte nicht verarbeitet werden:', e);
         }
     }
@@ -2345,12 +2505,10 @@ async function bildAuswahl() {
         speicherplatzPruefen();
     }
     if (fehler > 0) {
-        App.toast(fehler === 1 ? '1 Datei nicht verarbeitet' : `${fehler} Dateien nicht verarbeitet`, hinzugefuegt > 0 ? 'warn' : 'fehler');
+        const detail = fehlerDetails[0] ? ` (${fehlerDetails[0]})` : '';
+        App.toast(`${fehler} Datei${fehler !== 1 ? 'en' : ''} nicht verarbeitet${detail}`, hinzugefuegt > 0 ? 'warn' : 'fehler');
     }
 }
-
-function farbwahl(el) { Sketch.farbwahl(el); }
-function undo() { Sketch.undo(); }
 
 // Leitungs-Dialog
 let _ltgEditRow = null;
@@ -2394,8 +2552,6 @@ function bearbeitenLeitung(row) {
     document.querySelectorAll('#ltgDialog .fehler').forEach(el => el.classList.remove('fehler'));
     dialogOeffnen('ltgDialog');
 }
-
-function closeDialog() { dialogSchliessen('ltgDialog'); }
 
 function speichernLeitung() {
     const felder = Schacht.PFLICHTFELDER.map(id => document.getElementById(id));
@@ -2459,16 +2615,13 @@ function aktionAusfuehren(action, element) {
         case 'print-pdf': return printpdf();
         case 'neue-leitung': return neueLeitung();
         case 'speichern-leitung': return speichernLeitung();
-        case 'close-dialog': return closeDialog();
-        case 'undo': return undo();
+        case 'close-dialog': return dialogSchliessen('ltgDialog');
+        case 'undo': return Sketch.undo();
         case 'export-json': return exportAlleJSON();
-        case 'export-csv': return exportAlleCSV();
-        case 'export-xml': return exportAlleXML();
+        case 'export-json-ohne-bilder': return exportAlleJSON(false);
         case 'export-bilder': return exportBilderZIP();
         case 'export-alle-pdf': return exportAllePDF();
         case 'import-json': return document.getElementById('importDateiJSON')?.click();
-        case 'import-csv': return document.getElementById('importDateiCSV')?.click();
-        case 'import-xml': return document.getElementById('importDateiXML')?.click();
         case 'alle-schachte-loeschen': return alleSchachteLöschen();
         default:
             console.warn('[UI] Unbekannte Aktion:', action, element);
@@ -2476,49 +2629,104 @@ function aktionAusfuehren(action, element) {
 }
 
 function zentraleEventListenerInitialisieren() {
+    const aktionSicherAusfuehren = (action, element) => {
+        Promise.resolve(aktionAusfuehren(action, element)).catch(error => {
+            console.error(`[UI] Aktion «${action}» fehlgeschlagen:`, error);
+            App.toast(`Aktion fehlgeschlagen: ${error.message || 'Unbekannter Fehler'}`, 'fehler');
+        });
+    };
+
     document.addEventListener('click', event => {
         const actionEl = event.target.closest('[data-action]');
         if (!actionEl) return;
         event.preventDefault();
-        aktionAusfuehren(actionEl.dataset.action, actionEl);
+        aktionSicherAusfuehren(actionEl.dataset.action, actionEl);
     });
 
     document.addEventListener('keydown', event => {
+        const panel = document.getElementById('schachtListe');
+        if (event.key === 'Escape' && panel?.classList.contains('offen')) {
+            event.preventDefault();
+            schachtListeSchliessen();
+            return;
+        }
+        if (event.key === 'Tab' && panel?.classList.contains('offen')) {
+            const fokusElemente = Array.from(panel.querySelectorAll('button, input, select, textarea, [tabindex="0"]'))
+                .filter(el => !el.disabled && !el.hidden && el.offsetParent !== null);
+            if (fokusElemente.length) {
+                const erstes = fokusElemente[0];
+                const letztes = fokusElemente[fokusElemente.length - 1];
+                if (event.shiftKey && document.activeElement === erstes) {
+                    event.preventDefault();
+                    letztes.focus();
+                } else if (!event.shiftKey && document.activeElement === letztes) {
+                    event.preventDefault();
+                    erstes.focus();
+                }
+            }
+        }
         if (!['Enter', ' '].includes(event.key)) return;
         const actionEl = event.target.closest('[data-action], [data-stift]');
         if (!actionEl) return;
         event.preventDefault();
         if (actionEl.dataset.stift !== undefined) {
-            farbwahl(actionEl);
+            Sketch.farbwahl(actionEl);
         } else {
-            aktionAusfuehren(actionEl.dataset.action, actionEl);
+            aktionSicherAusfuehren(actionEl.dataset.action, actionEl);
         }
     });
 
     document.querySelectorAll('[data-stift]').forEach(el => {
-        el.addEventListener('click', () => farbwahl(el));
+        el.addEventListener('click', () => Sketch.farbwahl(el));
     });
 
     document.getElementById('input')?.addEventListener('change', bildAuswahl);
     document.getElementById('importDateiJSON')?.addEventListener('change', event => importJSON(event.target));
-    document.getElementById('importDateiCSV')?.addEventListener('change', event => importCSV(event.target));
-    document.getElementById('importDateiXML')?.addEventListener('change', event => importXML(event.target));
     document.getElementById('koordinaten_e')?.addEventListener('input', koordinatenAktualisieren);
     document.getElementById('koordinaten_n')?.addEventListener('input', koordinatenAktualisieren);
+    document.getElementById('schachtSuche')?.addEventListener('input', schachtListeFiltern);
+    document.getElementById('speichernWiederholen')?.addEventListener('click', () => App.aenderungenSpeichern());
+    document.getElementById('entwurfSichern')?.addEventListener('click', () => {
+        aktuellenEntwurfSichern().catch(() => undefined);
+    });
 }
 
 // ============================================================
 // Schächte-Liste Panel
 // ============================================================
 function schachtListeOeffnen() {
-    document.getElementById('schachtListe').classList.add('offen');
+    const panel = document.getElementById('schachtListe');
+    panel._rueckkehrFokus = document.activeElement;
+    panel.classList.add('offen');
     document.getElementById('panelOverlay').style.display = 'block';
     schachtListeAktualisieren();
+    requestAnimationFrame(() => document.getElementById('schachtSuche')?.focus());
+}
+
+function schachtListeFiltern() {
+    const suchtext = document.getElementById('schachtSuche')?.value.trim().toLocaleLowerCase('de-CH') || '';
+    const rows = Array.from(document.querySelectorAll('#schachtListeTabelle tbody tr[data-suchtext]'));
+    let sichtbar = 0;
+    rows.forEach(row => {
+        const passt = !suchtext || row.dataset.suchtext.includes(suchtext);
+        row.hidden = !passt;
+        if (passt) sichtbar++;
+    });
+    const anzahl = document.getElementById('schachtAnzahl');
+    if (anzahl) {
+        anzahl.textContent = suchtext
+            ? `${sichtbar} von ${rows.length}`
+            : `${rows.length} ${rows.length === 1 ? 'Schacht' : 'Schächte'}`;
+    }
 }
 
 function schachtListeSchliessen() {
-    document.getElementById('schachtListe').classList.remove('offen');
+    const panel = document.getElementById('schachtListe');
+    panel.classList.remove('offen');
     document.getElementById('panelOverlay').style.display = 'none';
+    const rueckkehr = panel._rueckkehrFokus;
+    delete panel._rueckkehrFokus;
+    requestAnimationFrame(() => rueckkehr?.focus?.());
 }
 
 async function schachtListeAktualisieren() {
@@ -2528,13 +2736,20 @@ async function schachtListeAktualisieren() {
         const alle = await DB.alle();
         if (alle.length === 0) {
             tbody.innerHTML = '<tr><td colspan="6" class="liste-leer">Keine gespeicherten Schächte</td></tr>';
+            const anzahl = document.getElementById('schachtAnzahl');
+            if (anzahl) anzahl.textContent = '0 Schächte';
             return;
         }
         alle.sort((a, b) => (b.geaendert_am || '').localeCompare(a.geaendert_am || ''));
         alle.forEach(s => {
             const tr = document.createElement('tr');
+            const typText = s.schacht_typ || s.typ || ((!s.gemeinde || !s.nummer || !s.aufnahmedatum) ? 'Entwurf' : '');
+            tr.dataset.suchtext = [s.datum, s.gemeinde, s.strasse, s.nummer, typText]
+                .filter(Boolean)
+                .join(' ')
+                .toLocaleLowerCase('de-CH');
             ['Datum', 'Gemeinde', 'Strasse', 'Nr', 'Typ'].forEach((label, i) => {
-                const v = [s.datum, s.gemeinde, s.strasse, s.nummer, s.schacht_typ || s.typ || ''][i];
+                const v = [s.datum, s.gemeinde, s.strasse, s.nummer, typText][i];
                 const cell = tr.insertCell(-1);
                 cell.textContent = v || '';
                 cell.dataset.label = label;
@@ -2545,11 +2760,12 @@ async function schachtListeAktualisieren() {
             btnLaden.className = 'btn-laden'; btnLaden.textContent = 'Laden';
             btnLaden.addEventListener('click', () => schachtLaden(s.id));
             const btnDel = document.createElement('button');
-            btnDel.className = 'btn-loeschen'; btnDel.textContent = 'x';
+            btnDel.className = 'btn-loeschen'; btnDel.textContent = 'Löschen';
             btnDel.addEventListener('click', () => schachtLoeschenAusListe(s.id));
             aktCell.append(btnLaden, btnDel);
             tbody.appendChild(tr);
         });
+        schachtListeFiltern();
     } catch (e) {
         console.error('[DB] Liste Fehler:', e);
         App.toast('Fehler beim Laden der Liste: ' + e.message, 'fehler');
@@ -2557,11 +2773,12 @@ async function schachtListeAktualisieren() {
 }
 
 async function schachtLaden(id) {
+    if (!await App.aenderungenSpeichern()) return;
+    App.datensatzWechseln();
     try {
         const data = await DB.laden(id);
         if (!data) { App.toast('Schacht nicht gefunden', 'fehler'); return; }
         App.state.currentSchachtId = id;
-        App.state.dirty = false;
         Schacht.laden(data);
         App.setStatus(`✓ Schacht #${id} geladen`);
         schachtListeSchliessen();
@@ -2572,12 +2789,13 @@ async function schachtLaden(id) {
 }
 
 async function schachtLoeschenAusListe(id) {
+    if (!await App.aenderungenSpeichern()) return;
     if (!await bestaetigen('Schacht unwiderruflich löschen?')) return;
-    clearTimeout(App.state.autoSaveTimer);
+    const warAktuell = App.state.currentSchachtId === id;
+    if (warAktuell) App.datensatzWechseln();
     try {
         await DB.loeschen(id);
-        if (App.state.currentSchachtId === id) {
-            App.state.currentSchachtId = null;
+        if (warAktuell) {
             Schacht.zuruecksetzen();
             App.setStatus('Schacht gelöscht');
         }
@@ -2622,6 +2840,11 @@ document.querySelectorAll('#zustandsbereich input[type="checkbox"][data-zustand-
 document.querySelectorAll('#zustandsbereich input[name="schadenstufe"]')
     .forEach(el => el.addEventListener('change', () => App.triggerAutoSave()));
 
+document.getElementById('zustand')?.addEventListener('change', () => {
+    Schacht.gesamtzustandGeaendert();
+    App.triggerAutoSave();
+});
+
 // ============================================================
 // Initialisierung
 // ============================================================
@@ -2650,4 +2873,8 @@ if (!document.getElementById('aufnahmedatum').value) {
     document.getElementById('aufnahmedatum').value = heutigesDatum();
 }
 App.setStatus('Bereit');
-window.addEventListener('beforeunload', () => clearTimeout(App.state.autoSaveTimer));
+window.addEventListener('beforeunload', event => {
+    if (!App.state.dirty) return;
+    event.preventDefault();
+    event.returnValue = '';
+});

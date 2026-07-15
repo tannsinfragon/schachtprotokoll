@@ -27,8 +27,8 @@ Erfasst werden:
 - Schachtliste mit Laden und Löschen gespeicherter Datensätze
 - Skizzenfläche mit Stiftfarben, Radierer, Rückgängig und Gittermodus
 - Fotoerfassung mit automatischer Komprimierung
-- Export als JSON, CSV, XML, Bilder-ZIP und PDF
-- Import von JSON, CSV und XML
+- Export als vollständiges JSON, JSON ohne Bilder, Bilder-ZIP und PDF
+- Import von JSON
 - Einzel-PDF für den aktuellen Schacht
 - Sammel-PDF für alle gespeicherten Schächte
 - Offline-Unterstützung über Service Worker und Cache
@@ -62,7 +62,6 @@ Verwendet werden:
 |-- assets/
 |   |-- js/
 |   |   |-- app-config.js      # Version, Schema, Foto- und Speicheroptionen
-|   |   `-- csv-tools.js       # CSV-Parser und CSV-Writer
 |   |-- vendor/
 |   |   `-- zip-writer.js      # ZIP-Erzeugung für Bildexporte
 |   |-- icons/                 # PWA-Icons
@@ -96,7 +95,7 @@ http://localhost:8000/
 4. Zustand, Skizze und Fotos ergänzen.
 5. Automatische lokale Speicherung abwarten.
 6. Gespeicherte Schächte über `SCHÄCHTE` öffnen.
-7. Daten als JSON, CSV, XML, Bilder-ZIP oder PDF exportieren.
+7. Daten als JSON, Bilder-ZIP oder PDF exportieren.
 
 ## Datenhaltung
 
@@ -108,21 +107,22 @@ Die Datensätze werden lokal im Browser gespeichert:
 
 Die Daten liegen nicht automatisch in GitHub, auf einem Server oder in einer Cloud. Für Datensicherung und Weitergabe müssen Exporte verwendet werden.
 
+Die Daten liegen unverschlüsselt im Browserprofil. Die App fordert nach Möglichkeit persistenten Browser-Speicher an und erinnert alle 30 Tage an ein vollständiges JSON-Backup. Browserbereinigung, Profilwechsel und ein defektes Gerät können lokale Daten trotzdem entfernen.
+
 ## Export und Import
 
 Unterstützte Exportformate:
 
 - JSON für vollständige strukturierte Backups
-- CSV für Tabellenverarbeitung
-- XML für systemnahe Weitergabe
+- JSON ohne Bilder für kleinere strukturierte Datenexporte
 - Bilder-ZIP für Fotos und genutzte Skizzen
 - PDF über die Browser-Druckfunktion
 
 Unterstützte Importformate:
 
 - JSON
-- CSV
-- XML
+
+JSON-Importe sind auf 150 MB, 500 Datensätze, 20 Fotos pro Datensatz und die in `assets/js/app-config.js` definierten Feld- und Mediengrössen begrenzt. Konflikte mit bestehenden Schächten werden vor dem atomaren Import als Aktualisierung oder Kopie behandelt.
 
 ## Offline-Nutzung
 
@@ -147,10 +147,10 @@ Nach Änderungen an gecachten Dateien muss der Cache-Name in `serviceworker.js` 
 Aktuelle App-Version:
 
 ```text
-2.5.0
+2.8.1
 ```
 
-Die Version ist in `manifest.json`, `assets/js/app-config.js`, `index.html`, `schacht.css` und `serviceworker.js` referenziert.
+Die Version ist in `assets/js/app-config.js`, als Fallback in `script.js` und im Cache-Namen von `serviceworker.js` referenziert.
 
 ## Quellen im Repository
 
