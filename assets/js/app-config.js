@@ -1,7 +1,7 @@
 'use strict';
 
 window.AppConfig = Object.freeze({
-    version: '2.8.1',
+    version: '2.8.9',
     schemaVersion: 3,
     company: '',
     photo: Object.freeze({

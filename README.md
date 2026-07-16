@@ -27,7 +27,7 @@ Erfasst werden:
 - Schachtliste mit Laden und Löschen gespeicherter Datensätze
 - Skizzenfläche mit Stiftfarben, Radierer, Rückgängig und Gittermodus
 - Fotoerfassung mit automatischer Komprimierung
-- Export als vollständiges JSON, JSON ohne Bilder, Bilder-ZIP und PDF
+- Export als vollständiges JSON, Rohdaten-ZIP mit Originalbildern, Bilder-ZIP und PDF
 - Import von JSON
 - Einzel-PDF für den aktuellen Schacht
 - Sammel-PDF für alle gespeicherten Schächte
@@ -63,7 +63,7 @@ Verwendet werden:
 |   |-- js/
 |   |   |-- app-config.js      # Version, Schema, Foto- und Speicheroptionen
 |   |-- vendor/
-|   |   `-- zip-writer.js      # ZIP-Erzeugung für Bildexporte
+|   |   `-- zip-writer.js      # ZIP-Erzeugung für Bild- und Rohdatenexporte
 |   |-- icons/                 # PWA-Icons
 |   |-- fonts/                 # Figtree-Schriften
 |   `-- logo.png               # Logo
@@ -114,9 +114,9 @@ Die Daten liegen unverschlüsselt im Browserprofil. Die App fordert nach Möglic
 Unterstützte Exportformate:
 
 - JSON für vollständige strukturierte Backups
-- JSON ohne Bilder für kleinere strukturierte Datenexporte
+- Rohdaten-ZIP mit einem Ordner je Schacht, vollständigem JSON und Originalbildern
 - Bilder-ZIP für Fotos und genutzte Skizzen
-- PDF über die Browser-Druckfunktion
+- PDF separat über die Browser-Druckfunktion im aktuellen Drucklayout
 
 Unterstützte Importformate:
 

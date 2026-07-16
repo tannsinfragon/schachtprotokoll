@@ -121,6 +121,36 @@ body {
     color: #fff;
 }
 
+.formular-navigation {
+    display: flex;
+    gap: 0.35rem;
+    padding: 0.45rem 1rem 0;
+    overflow-x: auto;
+    background: var(--farbehintergrund);
+}
+
+.formular-navigation a {
+    flex: 0 0 auto;
+    padding: 0.3rem 0.55rem;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    color: #596273;
+    font-size: 0.78rem;
+    font-weight: 600;
+    text-decoration: none;
+}
+
+.formular-navigation a:hover,
+.formular-navigation a:focus-visible {
+    border-color: var(--farberahmen);
+    background: #fff;
+    color: var(--farbeakzent);
+}
+
+.hauptinhalt .container {
+    scroll-margin-top: 154px;
+}
+
 
 /* ── Print-only elements (hidden on screen) ── */
 .print-footer { display: none; }
@@ -279,11 +309,10 @@ input[type="radio"] {
 
 .umfang-grid {
     display: grid;
-    grid-template-columns: repeat(5, minmax(0, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 0.5rem;
 }
 
-.umfang-fix,
 .umfang-toggle {
     min-height: 2.2rem;
     border: 1px solid var(--farberahmen);
@@ -295,10 +324,6 @@ input[type="radio"] {
     gap: 0.4rem;
     font-size: 0.88rem;
     font-weight: 600;
-}
-
-.umfang-fix {
-    color: #6b7280;
 }
 
 .umfang-toggle {
@@ -739,6 +764,55 @@ dialog.dialog-fallback-offen {
     font: inherit;
 }
 
+.panel-auswahl {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.65rem;
+    padding: 0.55rem 1rem;
+    border-bottom: 1px solid var(--farberahmen);
+    background: #edf4fe;
+    font-size: 0.78rem;
+}
+
+.panel-auswahl label {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-weight: 600;
+    color: #505866;
+    cursor: pointer;
+}
+
+.panel-auswahl input { accent-color: var(--farbeakzent); }
+
+.panel-auswahl-status {
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.45rem;
+    min-width: 0;
+}
+
+#schachtAuswahlAnzahl {
+    color: #1a4f8f;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.btn-auswahl-leeren {
+    border: none;
+    border-bottom: 1px solid currentColor;
+    padding: 0.1rem 0;
+    background: transparent;
+    color: #1a4f8f;
+    font: inherit;
+    font-size: 0.74rem;
+    cursor: pointer;
+}
+
+.btn-auswahl-leeren:hover { color: var(--farbeakzent); }
+
 #schachtAnzahl {
     min-width: 6.5rem;
     color: #6b7280;
@@ -749,7 +823,7 @@ dialog.dialog-fallback-offen {
 
 #schachtListeTabelle {
     table-layout: fixed;
-    min-width: 760px;
+    min-width: 0;
 }
 
 #schachtListeTabelle th {
@@ -758,12 +832,11 @@ dialog.dialog-fallback-offen {
     z-index: 1;
 }
 
-#schachtListeTabelle th:nth-child(1) { width: 92px; }
-#schachtListeTabelle th:nth-child(2) { width: 128px; }
-#schachtListeTabelle th:nth-child(3) { width: auto; }
-#schachtListeTabelle th:nth-child(4) { width: 76px; }
-#schachtListeTabelle th:nth-child(5) { width: 145px; }
-#schachtListeTabelle th:nth-child(6) { width: 154px; }
+#schachtListeTabelle th:nth-child(1) { width: 42px; }
+#schachtListeTabelle th:nth-child(2) { width: auto; }
+#schachtListeTabelle th:nth-child(3) { width: 132px; }
+#schachtListeTabelle th:nth-child(4) { width: 110px; }
+#schachtListeTabelle th:nth-child(5) { width: 142px; }
 
 #schachtListeTabelle td {
     overflow-wrap: anywhere;
@@ -773,12 +846,87 @@ dialog.dialog-fallback-offen {
     white-space: nowrap;
 }
 
+#schachtListeTabelle td strong,
+#schachtListeTabelle td small {
+    display: block;
+}
+
+#schachtListeTabelle td small {
+    margin-top: 0.18rem;
+    color: #6b7280;
+    font-size: 0.72rem;
+    line-height: 1.3;
+}
+
+.schacht-auswahl-zelle {
+    text-align: center;
+}
+
+.schacht-auswahl-label {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 28px;
+    cursor: pointer;
+}
+
+.schacht-auswahl-label input {
+    width: 17px;
+    height: 17px;
+    accent-color: var(--farbeakzent);
+}
+
+.schacht-aktionszelle {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+}
+
+.schacht-aktionszelle .btn-laden,
+.schacht-aktionszelle .btn-loeschen {
+    margin: 0;
+}
+
+.schacht-aktuell-marker {
+    display: inline-flex;
+    align-items: center;
+    margin: 0.28rem 0 0;
+    padding: 0.08rem 0.32rem;
+    border-radius: 3px;
+    background: #dbeafe;
+    color: #155abf;
+    font-size: 0.66rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+#schachtListeTabelle tr.schacht-liste-ausgewaehlt td {
+    background: #eef6ff;
+}
+
+#schachtListeTabelle tr.schacht-liste-aktuell td {
+    background: #e8f1fc;
+}
+
 #schachtListeTabelle tr[hidden] {
     display: none;
 }
 
+.sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+
 .panel-footer {
-    border-top: 1px solid var(--farberahmen);
+    border-top: 2px solid #d7dee8;
     padding: 0.75rem 1rem;
     display: flex;
     flex-direction: row;
@@ -874,6 +1022,256 @@ dialog.dialog-fallback-offen {
 .btn-loeschen:hover {
     background-color: var(--farbefehler);
     color: #fff;
+}
+
+.panel-daten-gruppe--export {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.4rem;
+}
+
+.panel-daten-gruppe--export .panel-daten-label {
+    grid-column: 1 / -1;
+}
+
+.panel-daten-gruppe--export button {
+    width: 100%;
+}
+
+.panel-daten-gruppe--import {
+    padding-top: 0.55rem;
+    border-top: 1px solid var(--farberahmen);
+}
+
+/* ── Feste Schacht-Seitenleiste ab Tablet im Querformat ── */
+@media screen and (min-width: 960px) {
+    body {
+        --schacht-seitenleiste-breite: clamp(340px, 23vw, 400px);
+        padding-right: var(--schacht-seitenleiste-breite);
+    }
+
+    .panel {
+        top: 0;
+        right: 0;
+        bottom: 0;
+        width: var(--schacht-seitenleiste-breite);
+        height: 100dvh;
+        border-left: 1px solid var(--farberahmen);
+        box-shadow: -2px 0 10px rgba(0, 0, 0, 0.08);
+        transition: none;
+        z-index: 110;
+    }
+
+    .panel-kopf button,
+    .panel-overlay {
+        display: none !important;
+    }
+
+    .nav-aktionen [data-action="schachtliste-oeffnen"] {
+        display: none;
+    }
+
+    .panel-werkzeuge {
+        grid-template-columns: 1fr;
+        gap: 0.35rem;
+        padding: 0.65rem 0.75rem;
+    }
+
+    #schachtAnzahl {
+        min-width: 0;
+        text-align: left;
+    }
+
+    .panel-auswahl {
+        padding: 0.5rem 0.75rem;
+    }
+
+    .panel-inhalt {
+        padding: 0.55rem 0.75rem 0.75rem;
+        background: #f5f7fa;
+    }
+
+    .panel-footer {
+        align-items: stretch;
+        flex-direction: column;
+        gap: 0.55rem;
+        padding: 0.65rem 0.75rem;
+    }
+
+    .panel .lokaldaten-hinweis {
+        flex: 0 0 auto;
+        width: 100%;
+        margin: 0.1rem 0 0;
+    }
+
+    .panel-daten-hinweis {
+        width: 100%;
+        color: #6b7280;
+        font-size: 0.72rem;
+    }
+
+    .panel-daten-hinweis summary {
+        cursor: pointer;
+        font-weight: 600;
+    }
+
+    .panel-daten-hinweis .lokaldaten-hinweis {
+        margin-top: 0.35rem;
+    }
+
+    .panel-daten-gruppe {
+        flex-wrap: wrap;
+    }
+
+    .panel-daten-gefahr {
+        margin-left: 0;
+        padding-top: 0.55rem;
+        padding-left: 0;
+        border-top: 1px solid var(--farberahmen);
+        border-left: none;
+    }
+
+    #schachtListeTabelle,
+    #schachtListeTabelle tbody {
+        display: block;
+        width: 100%;
+    }
+
+    #schachtListeTabelle thead {
+        display: none;
+    }
+
+    #schachtListeTabelle tr {
+        display: grid;
+        grid-template-columns: 24px minmax(0, 1fr) auto;
+        grid-template-areas:
+            "auswahl schacht aktionen"
+            ". details details";
+        column-gap: 0.5rem;
+        row-gap: 0.25rem;
+        margin-bottom: 0.4rem;
+        padding: 0.55rem;
+        border: 1px solid var(--farberahmen);
+        border-radius: 6px;
+        background: #fff;
+    }
+
+    #schachtListeTabelle td {
+        display: block;
+        min-width: 0;
+        padding: 0;
+        border: none;
+        background: transparent;
+        overflow-wrap: normal;
+    }
+
+    #schachtListeTabelle td:nth-child(1) { grid-area: auswahl; }
+    #schachtListeTabelle td:nth-child(2) { grid-area: schacht; }
+    #schachtListeTabelle td:nth-child(3) { grid-area: typ; }
+    #schachtListeTabelle td:nth-child(4) { grid-area: datum; }
+    #schachtListeTabelle td:nth-child(5) { grid-area: aktionen; }
+
+    #schachtListeTabelle td.schacht-meta {
+        display: inline;
+        color: #596273;
+        font-size: 0.75rem;
+        white-space: normal;
+    }
+
+    #schachtListeTabelle td.schacht-meta--typ::before {
+        content: "Typ: ";
+        font-weight: 700;
+    }
+
+    #schachtListeTabelle td.schacht-meta--datum::before {
+        content: " · Datum: ";
+        font-weight: 700;
+    }
+
+    #schachtListeTabelle tr > td.schacht-meta {
+        grid-row: 2;
+    }
+
+    #schachtListeTabelle td.schacht-meta--typ { grid-column: 2; }
+    #schachtListeTabelle td.schacht-meta--datum {
+        grid-column: 3;
+        justify-self: end;
+        text-align: right;
+        white-space: nowrap;
+    }
+
+    #schachtListeTabelle td.schacht-meta[hidden] {
+        display: none !important;
+    }
+
+    #schachtListeTabelle tr.schacht-ohne-typ td.schacht-meta--datum {
+        grid-column: 2 / -1;
+        justify-self: end;
+    }
+
+    #schachtListeTabelle tr.schacht-ohne-typ td.schacht-meta--datum::before {
+        content: "Datum: ";
+    }
+
+    #schachtListeTabelle td:nth-child(2) strong {
+        font-size: 0.86rem;
+        line-height: 1.2;
+    }
+
+    #schachtListeTabelle td:nth-child(2) small {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    #schachtListeTabelle .schacht-aktionszelle {
+        justify-content: flex-end;
+        gap: 0.8rem;
+    }
+
+    #schachtListeTabelle .schacht-aktionszelle .btn-laden,
+    #schachtListeTabelle .schacht-aktionszelle .btn-loeschen {
+        padding: 0.25rem 0.45rem;
+        font-size: 0.72rem;
+    }
+
+    #schachtListeTabelle .schacht-aktionszelle .btn-laden,
+    #schachtListeTabelle .btn-schacht-loeschen {
+        min-width: 64px;
+        min-height: 28px;
+        text-align: center;
+    }
+
+    #schachtListeTabelle tr.schacht-liste-aktuell {
+        border-color: var(--farbeakzent);
+        box-shadow: inset 3px 0 0 var(--farbeakzent);
+    }
+
+    #schachtListeTabelle tr.schacht-liste-ausgewaehlt {
+        border-color: #9cc3ec;
+        background: #f4f9ff;
+    }
+
+    #schachtListeTabelle tr.schacht-liste-ausgewaehlt.schacht-liste-aktuell {
+        border-color: var(--farbeakzent);
+        background: #eef6ff;
+    }
+
+    #schachtListeTabelle tr.schacht-liste-aktuell td {
+        background: transparent;
+    }
+
+    #schachtListeTabelle tr.schacht-liste-ausgewaehlt td {
+        background: transparent;
+    }
+
+    #schachtListeTabelle tr.liste-leer,
+    #schachtListeTabelle tr:has(.liste-leer) {
+        display: block;
+        padding: 0;
+        border: none;
+        background: transparent;
+    }
 }
 
 /* ── Status-Bar ── */
@@ -1022,7 +1420,7 @@ dialog.dialog-fallback-offen {
     }
 
     .erfassungsumfang-leiste .umfang-grid {
-        grid-template-columns: repeat(5, minmax(120px, 1fr));
+        grid-template-columns: repeat(4, minmax(120px, 1fr));
         overflow-x: auto;
         padding-bottom: 0.05rem;
         -webkit-overflow-scrolling: touch;
@@ -1166,7 +1564,7 @@ dialog.dialog-fallback-offen {
     }
 
     /* ─ Hide screen UI ─ */
-    #hauptnav, #erfassungsumfang, menu, .grundriss, .panel, .panel-overlay,
+    #hauptnav, #erfassungsumfang, .formular-navigation, menu, .grundriss, .panel, .panel-overlay,
     .statusbar, .toast, #offline-banner, #update-banner, #speicherfehler-banner, .skizze-hinweis,
     #confirmDialog, #ltgDialog, dialog, .print-footer,
     .foto-loeschen {
@@ -1324,24 +1722,8 @@ dialog.dialog-fallback-offen {
     }
 
     .print-summary-media {
-        display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 7pt;
-        align-items: start;
-    }
-
-    .print-summary-media[data-columns="1"] {
-        grid-template-columns: minmax(0, 0.68fr);
-        justify-content: center;
-    }
-
-    .print-summary-media[data-columns="3"] {
-        grid-template-columns: repeat(3, minmax(0, 1fr));
-        gap: 5pt;
-    }
-
-    .print-summary-media[data-columns="4"] {
-        grid-template-columns: repeat(4, minmax(0, 1fr));
+        display: flex;
+        align-items: flex-start;
         gap: 4pt;
     }
 
@@ -1365,6 +1747,20 @@ dialog.dialog-fallback-offen {
     .print-summary-media-item--skizze img {
         object-fit: contain;
         background: #fff;
+    }
+
+    /* Skizze bleibt links in fester Breite, Fotos füllen die rechte Seite. */
+    .print-summary-media-item--skizze {
+        flex: 0 0 42%;
+    }
+
+    /* Rechte Seite: bis zu 8 Fotos in 4 Spalten / 2 Zeilen. */
+    .print-summary-media-fotos {
+        flex: 1;
+        min-width: 0;
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 4pt;
     }
 
     /* ─ Main layout grid ─ */
@@ -1655,13 +2051,20 @@ dialog.dialog-fallback-offen {
 
 .feld-zeile > * { flex: 1; min-width: 0; }
 
-/* ── Feld-Wrapper (Label + Control, Label nur Print) ── */
-.feldname { display: none; }
+/* ── Feld-Wrapper ── */
+.feldname {
+    display: block;
+    color: #667085;
+    font-size: 0.68rem;
+    font-weight: 700;
+    line-height: 1.2;
+}
 
 .feld {
     display: flex;
     flex-direction: column;
     flex: 1;
+    gap: 0.18rem;
     min-width: 0;
 }
 
@@ -1795,10 +2198,6 @@ dialog.dialog-fallback-offen {
     .erfassungsumfang-leiste .umfang-grid {
         grid-template-columns: repeat(2, minmax(0, 1fr));
         overflow-x: visible;
-    }
-
-    .umfang-fix {
-        grid-column: 1 / -1;
     }
 
     .tabelle-scroll,
@@ -1941,6 +2340,22 @@ dialog.dialog-fallback-offen {
     #schachtListeTabelle {
         min-width: 0;
         table-layout: auto;
+    }
+
+    #schachtListeTabelle td.schacht-aktionszelle {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.35rem;
+    }
+
+    #schachtListeTabelle td.schacht-aktionszelle::before {
+        display: none;
+    }
+
+    #schachtListeTabelle td.schacht-aktionszelle .btn-laden,
+    #schachtListeTabelle td.schacht-aktionszelle .btn-loeschen {
+        flex: 1 1 120px;
+        min-height: 40px;
     }
 
     .panel-footer,

@@ -32,8 +32,8 @@
         </div>
         <div class="nav-aktionen">
             <button type="button" data-action="neuer-schacht">NEU</button>
-            <button type="button" data-action="schachtliste-oeffnen">SCHÄCHTE</button>
-            <button type="button" data-action="print-pdf">PDF</button>
+            <button type="button" data-action="schachtliste-oeffnen" aria-controls="schachtListe" aria-expanded="false">SCHÄCHTE</button>
+            <button type="button" data-action="print-pdf" title="Aktuelles Protokoll als PDF drucken">PDF aktuell</button>
         </div>
     </nav>
 
@@ -51,7 +51,6 @@
     <div id="erfassungsumfang" class="container erfassungsumfang-leiste">
         <h3 class="section-titel">Erfassungsumfang</h3>
         <form action="" class="umfang-grid">
-            <div class="umfang-fix">Allgemein</div>
             <label class="umfang-toggle" for="umfang_deckel">
                 <input type="checkbox" id="umfang_deckel" data-umfang="deckel" checked>
                 <span>Deckel</span>
@@ -478,26 +477,32 @@
 
     </div><!-- /hauptinhalt -->
 
-    <!-- ── Schächte-Liste Panel ── -->
-    <div id="schachtListe" class="panel" role="dialog" aria-modal="true" aria-labelledby="schachtListeTitel">
+    <!-- ── Schächte-Liste / Seitenleiste ── -->
+    <aside id="schachtListe" class="panel" aria-labelledby="schachtListeTitel">
         <div class="panel-kopf">
             <h3 id="schachtListeTitel">Gespeicherte Schächte</h3>
-            <button type="button" data-action="schachtliste-schliessen" title="Schliessen">✕</button>
+            <button type="button" data-action="schachtliste-schliessen" title="Schliessen" aria-label="Schachtliste schliessen">✕</button>
         </div>
         <div class="panel-werkzeuge">
             <label for="schachtSuche">Schächte filtern</label>
             <input type="search" id="schachtSuche" placeholder="Gemeinde, Strasse, Nummer oder Typ" autocomplete="off">
             <span id="schachtAnzahl" aria-live="polite"></span>
         </div>
+        <div class="panel-auswahl">
+            <label for="schachtAlleSichtbar"><input type="checkbox" id="schachtAlleSichtbar"> Alle sichtbaren auswählen</label>
+            <div class="panel-auswahl-status">
+                <span id="schachtAuswahlAnzahl" aria-live="polite">0 ausgewählt</span>
+                <button type="button" id="schachtAuswahlLoeschen" class="btn-auswahl-leeren" hidden>Auswahl aufheben</button>
+            </div>
+        </div>
         <div class="panel-inhalt">
             <table id="schachtListeTabelle">
                 <thead>
                     <tr>
-                        <th>Datum</th>
-                        <th>Gemeinde</th>
-                        <th>Strasse</th>
-                        <th>Nr</th>
+                        <th class="schacht-auswahl-spalte"><span class="sr-only">Auswahl</span></th>
+                        <th>Schacht</th>
                         <th>Typ</th>
+                        <th>Aufnahmedatum</th>
                         <th></th>
                     </tr>
                 </thead>
@@ -505,14 +510,14 @@
             </table>
         </div>
         <div class="panel-footer">
-            <div class="panel-daten-gruppe">
-                <span class="panel-daten-label">Exportieren</span>
+            <div class="panel-daten-gruppe panel-daten-gruppe--export">
+                <span id="exportModusLabel" class="panel-daten-label">Export des Filters</span>
                 <button type="button" data-action="export-json">JSON</button>
-                <button type="button" data-action="export-json-ohne-bilder">JSON ohne Bilder</button>
+                <button type="button" data-action="export-rohdaten" title="JSON und Originalbilder als ZIP-Archiv exportieren">Rohdaten (ZIP)</button>
                 <button type="button" data-action="export-bilder">Bilder</button>
-                <button type="button" data-action="export-alle-pdf">PDF</button>
+                <button type="button" data-action="export-alle-pdf" title="Druckbares PDF im aktuellen Layout erstellen">PDF Auswahl</button>
             </div>
-            <div class="panel-daten-gruppe">
+            <div class="panel-daten-gruppe panel-daten-gruppe--import">
                 <span class="panel-daten-label">Importieren</span>
                 <button type="button" data-action="import-json">JSON</button>
                 <input type="file" id="importDateiJSON" accept=".json" style="display:none"
@@ -522,9 +527,12 @@
                 <span class="panel-daten-label">Datenbank</span>
                 <button type="button" data-action="alle-schachte-loeschen" class="btn-gefahr">Alle Schächte löschen</button>
             </div>
-            <p class="lokaldaten-hinweis">Daten liegen lokal und unverschlüsselt in diesem Browserprofil. JSON-Backups regelmässig extern sichern.</p>
+            <details class="panel-daten-hinweis">
+                <summary>Lokale Daten</summary>
+                <p class="lokaldaten-hinweis">Daten liegen lokal und unverschlüsselt in diesem Browserprofil. JSON-Backups regelmässig extern sichern.</p>
+            </details>
         </div>
-    </div>
+    </aside>
     <div id="panelOverlay" class="panel-overlay" data-action="schachtliste-schliessen" style="display:none"></div>
 
     <!-- ── Dialog: Leitung erfassen ── -->
@@ -660,8 +668,8 @@
     <div id="statusbar" class="statusbar"><span class="statusbar-copyright">&copy; Andreas Blaser / Severin Tanner</span><span id="speicherstatus" class="speicherstatus speicherstatus--checking">Speicherprüfung</span><span id="statusbar-text" role="status" aria-live="polite">Bereit</span></div>
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
-    <script src="./assets/js/app-config.js"></script>
-    <script src="./assets/vendor/zip-writer.js"></script>
-    <script src="./script.js"></script>
+    <script src="./assets/js/app-config.js?v=2.8.9"></script>
+    <script src="./assets/vendor/zip-writer.js?v=2.8.9"></script>
+    <script src="./script.js?v=2.8.9"></script>
 </body>
 </html>

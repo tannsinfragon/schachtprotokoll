@@ -1,14 +1,14 @@
-// Schachtprotokoll Service Worker v2.8.1
+// Schachtprotokoll Service Worker v2.8.9
 const CACHE_PREFIX = 'schachtprotokoll-';
-const CACHE_NAME = `${CACHE_PREFIX}2.8.1`;
+const CACHE_NAME = `${CACHE_PREFIX}2.8.9`;
 
 const CORE_ASSETS = [
     './',
     './index.html',
     './schacht.css',
-    './assets/js/app-config.js',
-    './assets/vendor/zip-writer.js',
-    './script.js',
+    './assets/js/app-config.js?v=2.8.9',
+    './assets/vendor/zip-writer.js?v=2.8.9',
+    './script.js?v=2.8.9',
     './manifest.json',
     './assets/logo.png'
 ];

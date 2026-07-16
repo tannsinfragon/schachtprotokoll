@@ -25,6 +25,12 @@
         return new TextEncoder().encode(String(text ?? ''));
     }
 
+    function isBlob(data) {
+        return Boolean(data && typeof data === 'object' &&
+            ((typeof Blob !== 'undefined' && data instanceof Blob) || Object.prototype.toString.call(data) === '[object Blob]') &&
+            typeof data.arrayBuffer === 'function' && typeof data.size === 'number');
+    }
+
     function normalizePath(path) {
         return String(path || '')
             .replace(/\\/g, '/')
@@ -36,7 +42,7 @@
         if (data instanceof Uint8Array) return data;
         if (data instanceof ArrayBuffer) return new Uint8Array(data);
         if (ArrayBuffer.isView(data)) return new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
-        if (data instanceof Blob) return new Uint8Array(await data.arrayBuffer());
+        if (isBlob(data)) return new Uint8Array(await data.arrayBuffer());
         return utf8(data);
     }
 
@@ -132,7 +138,7 @@
                 writeU32(local, 22, dataBytes.length);
                 writeU16(local, 26, nameBytes.length);
                 local.set(nameBytes, 30);
-                localParts.push(local, originalData instanceof Blob ? originalData : dataBytes);
+                localParts.push(local, dataBytes);
 
                 const central = new Uint8Array(46 + nameBytes.length);
                 writeU32(central, 0, 0x02014b50);
@@ -163,7 +169,7 @@
 
             const all = [...localParts, ...centralParts, end];
             if (options.type === 'uint8array') return concat(all.map(toBytesResult => {
-                if (toBytesResult instanceof Blob) throw new Error('Uint8Array-Ausgabe unterstützt keine Blob-Dateien');
+                if (isBlob(toBytesResult)) throw new Error('Uint8Array-Ausgabe unterstützt keine Blob-Dateien');
                 return toBytesResult;
             }), offset + centralSize + end.length);
             return new Blob(all, { type: options.mimeType || 'application/zip' });
