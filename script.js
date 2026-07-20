@@ -306,6 +306,23 @@ const App = {
         App.state.dirty = false;
     },
 
+    setCurrentSchachtId(id) {
+        App.state.currentSchachtId = id;
+    },
+
+    datensatzAlsGespeichertMarkieren(id) {
+        App.state.currentSchachtId = id;
+        App.state.dirty = false;
+    },
+
+    leitungsnummerZuruecksetzen() {
+        App.state.leitungsnummer = 1;
+    },
+
+    leitungsnummerSicherstellen(nrZahl) {
+        App.state.leitungsnummer = Math.max(App.state.leitungsnummer, nrZahl + 1);
+    },
+
     async autoSpeichern(token = App.state.recordToken) {
         if (token !== App.state.recordToken) return false;
         if (!App.state.storageAvailable) {
@@ -1488,7 +1505,7 @@ const Schacht = (() => {
         _schadenstufeSetzen(data.schadenstufe || '');
         const tbody = document.querySelector('#tblleitungen tbody');
         tbody.innerHTML = '';
-        App.state.leitungsnummer = 1;
+        App.leitungsnummerZuruecksetzen();
         (data.leitungen || []).forEach(l => _insertLeitungRow(l));
         const skizzenModus = data.skizze_modus === 'gitter' ? true : false;
         Sketch.ladeSkizze(data.skizze, typeof data.skizze_genutzt === 'boolean' ? data.skizze_genutzt : undefined, data.skizze_strokes, skizzenModus, data.skizze_basis);
@@ -1507,7 +1524,7 @@ const Schacht = (() => {
         _zustandZuruecksetzen();
         fotosLeeren();
         document.querySelector('#tblleitungen tbody').innerHTML = '';
-        App.state.leitungsnummer = 1;
+        App.leitungsnummerZuruecksetzen();
         Sketch.leinwand(false);
         kopfzeile();
         if (typeof UIFeedback !== 'undefined') {
@@ -1529,7 +1546,7 @@ const Schacht = (() => {
         if (!isNaN(nr)) _set('nummer', nr + 1);
         fotosLeeren();
         document.querySelector('#tblleitungen tbody').innerHTML = '';
-        App.state.leitungsnummer = 1;
+        App.leitungsnummerZuruecksetzen();
         Sketch.leinwand(false);
         kopfzeile();
         if (typeof UIFeedback !== 'undefined') {
@@ -1545,7 +1562,7 @@ const Schacht = (() => {
         const nr = ltg.nr || App.state.leitungsnummer;
         const nrZahl = Number(nr);
         if (!Number.isNaN(nrZahl)) {
-            App.state.leitungsnummer = Math.max(App.state.leitungsnummer, nrZahl + 1);
+            App.leitungsnummerSicherstellen(nrZahl);
         }
         const normalisiert = {
             nr: String(nr),
@@ -1804,8 +1821,7 @@ async function neuerSchacht() {
         await Sketch.ready();
         const neuerEntwurf = recordStatusSetzen(Schacht.sammeln(), RECORD_STATUS.DRAFT);
         const id = await DB.speichern(neuerEntwurf);
-        App.state.currentSchachtId = id;
-        App.state.dirty = false;
+        App.datensatzAlsGespeichertMarkieren(id);
         App.setStatus('Neuer Entwurf gespeichert');
         await schachtListeAktualisieren();
         App.toast('Neuer Schacht als Entwurf gespeichert', 'success');
@@ -3215,7 +3231,7 @@ async function schachtLaden(id) {
     try {
         const data = await DB.laden(id);
         if (!data) { App.toast('Schacht nicht gefunden', 'fehler'); return; }
-        App.state.currentSchachtId = id;
+        App.setCurrentSchachtId(id);
         Schacht.laden(data);
         App.setStatus(`✓ Schacht #${id} geladen`);
         await schachtListeAktualisieren();
