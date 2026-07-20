@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VERSION = window.AppConfig?.version || '2.8.1';
+const APP_VERSION = window.AppConfig?.version || '2.8.10';
 const EXPORT_SCHEMA_VERSION = window.AppConfig?.schemaVersion || 3;
 const APP_FIRMA = window.AppConfig?.company || '';
 const FOTO_MAX_KANTE = window.AppConfig?.photo?.maxEdge || 1600;
@@ -446,6 +446,8 @@ const Sketch = (() => {
     let ladeAktiv = false;
     let rasterBasisAktiv = false;
     let korrekturAktiv = true;
+    let logischeGroesse = 0;   // aktuelle CSS-Pixel-Kantenlänge (unabhängig vom devicePixelRatio)
+    let resizeTimer = null;    // Debounce-Handle für den window-resize-Listener
     const pen = { farbe: 'black', zeichnen: false, stift: false, breite: 1 };
 
     // --- Hilfsfunktionen Strich-Rendering ---
@@ -586,17 +588,18 @@ const Sketch = (() => {
         currentMode = gitter;
         document.getElementById('skizze')?.classList.toggle('aktiv', !gitter);
         document.getElementById('gitter')?.classList.toggle('aktiv', gitter);
-        const cx = canvas.width / 2;
-        const cy = canvas.height / 2;
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        const s = logischeGroesse || canvas.width;
+        const cx = s / 2;
+        const cy = s / 2;
+        ctx.clearRect(0, 0, s, s);
         ctx.strokeStyle = 'gray';
         ctx.setLineDash([3, 4]);
         if (gitter) {
-            const masche = canvas.height / 10;
-            for (let i = masche; i < canvas.height; i += masche) {
+            const masche = s / 10;
+            for (let i = masche; i < s; i += masche) {
                 ctx.beginPath();
-                ctx.moveTo(i, 0); ctx.lineTo(i, canvas.height);
-                ctx.moveTo(0, i); ctx.lineTo(canvas.width, i);
+                ctx.moveTo(i, 0); ctx.lineTo(i, s);
+                ctx.moveTo(0, i); ctx.lineTo(s, i);
                 ctx.stroke();
             }
         } else {
@@ -605,8 +608,8 @@ const Sketch = (() => {
             ctx.arc(cx, cy, 50, 0, 2 * Math.PI);
             ctx.fill();
             ctx.beginPath();
-            ctx.moveTo(cx, 30); ctx.lineTo(cx, canvas.height);
-            ctx.moveTo(0, cy); ctx.lineTo(canvas.width, cy);
+            ctx.moveTo(cx, 30); ctx.lineTo(cx, s);
+            ctx.moveTo(0, cy); ctx.lineTo(s, cy);
             ctx.stroke();
             ctx.fillStyle = 'black';
             ctx.font = '12px system-ui';
@@ -631,22 +634,27 @@ const Sketch = (() => {
         const size = Math.floor(breite);
         if (size <= 0) return;
 
-        const oldWidth = canvas.width;
+        if (logischeGroesse === size && backgroundImageData) return;
+
+        const dpr = Math.min(window.devicePixelRatio || 1, 3); // Deckel gegen exzessive Speichernutzung bei sehr hohem DPR
+        const oldWidth = canvas.width;   // realer Pixel-Puffer (für Bild-Buffer-Operationen)
         const oldHeight = canvas.height;
-        if (oldWidth === size && oldHeight === size && backgroundImageData) return;
 
         const inhaltBehalten = oldWidth > 0 && oldHeight > 0 && (loadedContent || strokes.length > 0);
         const alterHintergrund = inhaltBehalten && loadedContent && backgroundImageData
             ? imageDataCanvas(backgroundImageData, oldWidth, oldHeight)
             : null;
-        const sx = oldWidth > 0 ? size / oldWidth : 1;
-        const sy = oldHeight > 0 ? size / oldHeight : 1;
+        // Skalierungsfaktor für Strokes: CSS-Pixel-Grösse alt → neu (nicht Pixel-Puffer-Grösse)
+        const sx = logischeGroesse > 0 ? size / logischeGroesse : 1;
+        const sy = sx;
         const skalierteStrokes = inhaltBehalten ? strokes.map(s => strokeSkalieren(s, sx, sy)).filter(Boolean) : [];
         const skalierterUndoStack = inhaltBehalten ? undoStack.map(e => undoEintragSkalieren(e, sx, sy)).filter(Boolean) : [];
 
         pen.zeichnen = false;
-        canvas.width = size;
-        canvas.height = size;
+        canvas.width = Math.round(size * dpr);
+        canvas.height = Math.round(size * dpr);
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        logischeGroesse = size;
         standardHintergrundSetzen(currentMode);
 
         if (alterHintergrund) {
@@ -673,7 +681,13 @@ const Sketch = (() => {
         canvas.addEventListener('pointerup', stop);
         canvas.addEventListener('pointerleave', stop);
         canvas.addEventListener('pointercancel', () => { stop(); pen.stift = false; });
-        window.addEventListener('resize', () => { cachedRect = null; canvasGroesse(); });
+        window.addEventListener('resize', () => {
+            clearTimeout(resizeTimer);
+            resizeTimer = setTimeout(() => {
+                cachedRect = null;
+                canvasGroesse();
+            }, 180);
+        });
         document.addEventListener('keydown', e => {
             if ((e.ctrlKey || e.metaKey) && e.key === 'z') { e.preventDefault(); undo(); }
         });
@@ -887,7 +901,7 @@ const Sketch = (() => {
                 img.onload = () => {
                     if (token === ladeToken) {
                         standardHintergrundSetzen(Boolean(gitter));
-                        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                        ctx.drawImage(img, 0, 0, logischeGroesse, logischeGroesse);
                         hintergrundSpeichern();
                         redrawAll();
                     }
@@ -920,7 +934,7 @@ const Sketch = (() => {
             img.onload = () => {
                 if (token === ladeToken) {
                     standardHintergrundSetzen(Boolean(gitter));
-                    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                    ctx.drawImage(img, 0, 0, logischeGroesse, logischeGroesse);
                     hintergrundSpeichern();
                     loadedContent = typeof genutzt === 'boolean' ? genutzt : dataURL !== defaultDataURL;
                 }
