@@ -26,6 +26,9 @@
 }
 
 :root {
+    color-scheme: light;
+
+    --schrift: 'Figtree', system-ui, -apple-system, sans-serif;
     --farbemenu: #1e2a3a;
     --farbemenu-text: #f0f2f5;
     --farbehover: #4a9eff;
@@ -36,7 +39,39 @@
     --farbeakzent: #1a6fcf;
     --farbeerfolg: #2e7d32;
     --farbefehler: #c62828;
+    --farbewarnung: #e65100;
     --farbe-schatten: rgba(0, 0, 0, 0.1);
+    --flaeche: #ffffff;
+    --flaeche-mild: #f8f9fb;
+    --flaeche-muted: #eef1f5;
+    --flaeche-akzent: #eaf2ff;
+    --flaeche-akzent-hell: #eef6ff;
+    --flaeche-akzent-stark: #dbeafe;
+    --text-muted: #6b7280;
+    --text-soft: #596273;
+    --text-label: #505866;
+    --text-placeholder: #9ca3af;
+    --text-akzent-dunkel: #123f73;
+    --text-nav-muted: #7a9cc4;
+    --farbeakzent-hover: #155abf;
+    --linie-subtil: #edf0f3;
+    --panel-auswahl-bg: #edf4fe;
+    --zeile-aktuell-bg: #e8f1fc;
+    --zeile-auswahl-bg: #f4f9ff;
+    --zeile-auswahl-border: #9cc3ec;
+    --gefahr-bg: #fff5f5;
+    --gefahr-border: #ef9a9a;
+    --radius-xs: 3px;
+    --radius-sm: 4px;
+    --radius-md: 6px;
+    --radius-lg: 8px;
+    --radius-xl: 10px;
+    --schatten-sm: 0 1px 4px var(--farbe-schatten);
+    --schatten-nav: 0 2px 6px var(--farbe-schatten);
+    --schatten-panel: -4px 0 20px rgba(0, 0, 0, 0.18);
+    --schatten-dialog: 0 8px 24px rgba(0, 0, 0, 0.2);
+    --schatten-toast: 0 4px 12px rgba(0, 0, 0, 0.22);
+    --fokus-ring: 0 0 0 2px rgba(26, 111, 207, 0.18);
 }
 
 * { box-sizing: border-box; }
@@ -49,7 +84,7 @@ html {
 body {
     background-color: var(--farbehintergrund);
     color: var(--farbefont);
-    font-family: 'Figtree', system-ui, -apple-system, sans-serif;
+    font-family: var(--schrift);
     margin: 0;
     padding: 0;
     padding-bottom: 2.5rem;
@@ -67,7 +102,7 @@ body {
     align-items: center;
     justify-content: space-between;
     padding: 0.45rem 1rem;
-    box-shadow: 0 2px 6px var(--farbe-schatten);
+    box-shadow: var(--schatten-nav);
 }
 
 .nav-logo {
@@ -90,7 +125,7 @@ body {
 }
 
 .nav-version {
-    color: #7a9cc4;
+    color: var(--text-nav-muted);
     font-size: 0.72rem;
     margin-left: 0.3rem;
 }
@@ -106,7 +141,7 @@ body {
     background-color: rgba(255, 255, 255, 0.08);
     color: var(--farbemenu-text);
     border: 1px solid rgba(255, 255, 255, 0.18);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     padding: 0.35rem 0.8rem;
     font-size: 0.82rem;
     font-weight: 600;
@@ -133,8 +168,8 @@ body {
     flex: 0 0 auto;
     padding: 0.3rem 0.55rem;
     border: 1px solid transparent;
-    border-radius: 4px;
-    color: #596273;
+    border-radius: var(--radius-sm);
+    color: var(--text-soft);
     font-size: 0.78rem;
     font-weight: 600;
     text-decoration: none;
@@ -143,7 +178,7 @@ body {
 .formular-navigation a:hover,
 .formular-navigation a:focus-visible {
     border-color: var(--farberahmen);
-    background: #fff;
+    background: var(--flaeche);
     color: var(--farbeakzent);
 }
 
@@ -212,11 +247,11 @@ header {
 
 /* ── Container (Karte) ── */
 .container {
-    background-color: #ffffff;
+    background-color: var(--flaeche);
     border: 1px solid var(--farberahmen);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     padding: 1rem;
-    box-shadow: 0 1px 4px var(--farbe-schatten);
+    box-shadow: var(--schatten-sm);
 }
 
 .section-titel {
@@ -254,8 +289,8 @@ textarea {
     font-size: 0.95rem;
     padding: 0 0.5rem;
     border: 1px solid var(--farberahmen);
-    border-radius: 4px;
-    background: #fff;
+    border-radius: var(--radius-sm);
+    background: var(--flaeche);
     width: 100%;
     transition: border-color 0.15s, box-shadow 0.15s;
 }
@@ -268,12 +303,13 @@ textarea {
 
 input::placeholder,
 textarea::placeholder {
-    color: #9ca3af;
+    color: var(--text-placeholder);
+    opacity: 0.78;
 }
 
 select {
-    color: #9ca3af;
-    -webkit-text-fill-color: #9ca3af;
+    color: var(--text-placeholder);
+    -webkit-text-fill-color: var(--text-placeholder);
 }
 
 select.wert-gewaehlt {
@@ -287,7 +323,7 @@ select:focus,
 textarea:focus {
     outline: none;
     border-color: var(--farbeakzent);
-    box-shadow: 0 0 0 2px rgba(26, 111, 207, 0.18);
+    box-shadow: var(--fokus-ring);
 }
 
 textarea {
@@ -316,14 +352,23 @@ input[type="radio"] {
 .umfang-toggle {
     min-height: 2.2rem;
     border: 1px solid var(--farberahmen);
-    border-radius: 4px;
-    background: #f8f9fb;
+    border-radius: var(--radius-sm);
+    background: var(--flaeche-mild);
     display: flex;
     align-items: center;
     justify-content: center;
     gap: 0.4rem;
     font-size: 0.88rem;
     font-weight: 600;
+}
+
+.erfassungsumfang-leiste .umfang-toggle {
+    min-height: 2rem;
+    background: var(--flaeche);
+}
+
+.erfassungsumfang-leiste .umfang-toggle:has(input:checked) {
+    background: var(--flaeche-akzent);
 }
 
 .umfang-toggle {
@@ -334,8 +379,8 @@ input[type="radio"] {
 .umfang-toggle--aktiv,
 .umfang-toggle:has(input:checked) {
     border-color: var(--farbeakzent);
-    background: #eaf2ff;
-    color: #123f73;
+    background: var(--flaeche-akzent);
+    color: var(--text-akzent-dunkel);
 }
 
 .zustand-tabelle-scroll {
@@ -352,7 +397,7 @@ input[type="radio"] {
     width: 180px;
     text-align: left;
     vertical-align: middle;
-    background: #eef1f5;
+    background: var(--flaeche-muted);
     color: var(--farbefont);
     font-size: 0.82rem;
     letter-spacing: 0;
@@ -380,7 +425,7 @@ input[type="radio"] {
 .schadenstufe {
     margin-top: 0.75rem;
     border: 1px solid var(--farberahmen);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     padding: 0.6rem;
     display: flex;
     align-items: center;
@@ -404,7 +449,7 @@ select.fehler {
 menu {
     margin: 0;
     background-color: var(--farbemenu);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     padding: 0.4rem 0.8rem;
     display: flex;
     flex-direction: row;
@@ -420,7 +465,7 @@ menu label {
     background-color: rgba(255, 255, 255, 0.1);
     color: var(--farbemenu-text);
     border: 1px solid rgba(255, 255, 255, 0.2);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     padding: 0.3rem 0.8rem;
     cursor: pointer;
     transition: background-color 0.15s;
@@ -477,13 +522,13 @@ td {
 }
 
 tr:nth-child(even) td {
-    background-color: #f8f9fb;
+    background-color: var(--flaeche-mild);
 }
 
 /* ── Canvas ── */
 canvas {
     border: 1px solid var(--farberahmen);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     touch-action: none;
     display: block;
     align-self: stretch;
@@ -524,7 +569,7 @@ canvas {
     background-color: var(--farbemenu);
     color: var(--farbemenu-text);
     border: none;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     padding: 0.3rem 0.45rem;
     cursor: pointer;
     font-size: 0.82rem;
@@ -550,8 +595,8 @@ canvas {
 dialog {
     background-color: var(--farbedialog);
     border: 1px solid var(--farberahmen);
-    border-radius: 10px;
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+    border-radius: var(--radius-xl);
+    box-shadow: var(--schatten-dialog);
     margin-top: 4rem;
     padding: 0;
     min-width: 300px;
@@ -589,14 +634,14 @@ dialog.dialog-fallback-offen {
     overflow-y: auto;
     overflow-x: hidden;
     background: transparent;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
 }
 
 .foto-wrapper {
     min-width: 0;
     position: relative;
     overflow: hidden;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     background: var(--farbehintergrund);
     aspect-ratio: 4 / 3;
 }
@@ -637,8 +682,8 @@ dialog.dialog-fallback-offen {
     right: -100%;
     width: min(920px, 96vw);
     height: 100%;
-    background: #fff;
-    box-shadow: -4px 0 20px rgba(0, 0, 0, 0.18);
+    background: var(--flaeche);
+    box-shadow: var(--schatten-panel);
     z-index: 200;
     transition: right 0.28s ease;
     display: flex;
@@ -673,7 +718,7 @@ dialog.dialog-fallback-offen {
     font-size: 1.2rem;
     cursor: pointer;
     padding: 0.2rem 0.5rem;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     transition: background-color 0.15s;
 }
 
@@ -687,9 +732,9 @@ dialog.dialog-fallback-offen {
 }
 
 #update-banner {
-    background: #dbeafe;
-    color: #123f73;
-    border-bottom: 1px solid #1a6fcf;
+    background: var(--flaeche-akzent-stark);
+    color: var(--text-akzent-dunkel);
+    border-bottom: 1px solid var(--farbeakzent);
     padding: 0.45rem 1rem;
     text-align: center;
     font-size: 0.85rem;
@@ -721,13 +766,13 @@ dialog.dialog-fallback-offen {
 
 .umfang-hinweis {
     margin: 0.45rem 0 0;
-    color: #6b7280;
+    color: var(--text-muted);
     font-size: 0.75rem;
 }
 
 .feld-hinweis,
 .lokaldaten-hinweis {
-    color: #6b7280;
+    color: var(--text-muted);
     font-size: 0.75rem;
     margin: 0.35rem 0 0;
 }
@@ -745,14 +790,14 @@ dialog.dialog-fallback-offen {
     gap: 0.65rem;
     padding: 0.75rem 1rem;
     border-bottom: 1px solid var(--farberahmen);
-    background: #fff;
+    background: var(--flaeche);
     flex-shrink: 0;
 }
 
 .panel-werkzeuge label {
     font-size: 0.78rem;
     font-weight: 700;
-    color: #505866;
+    color: var(--text-label);
 }
 
 .panel-werkzeuge input {
@@ -771,7 +816,7 @@ dialog.dialog-fallback-offen {
     gap: 0.65rem;
     padding: 0.55rem 1rem;
     border-bottom: 1px solid var(--farberahmen);
-    background: #edf4fe;
+    background: var(--panel-auswahl-bg);
     font-size: 0.78rem;
 }
 
@@ -780,7 +825,7 @@ dialog.dialog-fallback-offen {
     align-items: center;
     gap: 0.4rem;
     font-weight: 600;
-    color: #505866;
+    color: var(--text-label);
     cursor: pointer;
 }
 
@@ -815,7 +860,7 @@ dialog.dialog-fallback-offen {
 
 #schachtAnzahl {
     min-width: 6.5rem;
-    color: #6b7280;
+    color: var(--text-muted);
     font-size: 0.78rem;
     text-align: right;
     white-space: nowrap;
@@ -836,10 +881,11 @@ dialog.dialog-fallback-offen {
 #schachtListeTabelle th:nth-child(2) { width: auto; }
 #schachtListeTabelle th:nth-child(3) { width: 132px; }
 #schachtListeTabelle th:nth-child(4) { width: 110px; }
-#schachtListeTabelle th:nth-child(5) { width: 142px; }
+#schachtListeTabelle th:nth-child(5) { width: 128px; }
 
 #schachtListeTabelle td {
     overflow-wrap: anywhere;
+    vertical-align: middle;
 }
 
 #schachtListeTabelle td:last-child {
@@ -852,8 +898,8 @@ dialog.dialog-fallback-offen {
 }
 
 #schachtListeTabelle td small {
-    margin-top: 0.18rem;
-    color: #6b7280;
+    margin-top: 0.12rem;
+    color: var(--text-muted);
     font-size: 0.72rem;
     line-height: 1.3;
 }
@@ -879,7 +925,8 @@ dialog.dialog-fallback-offen {
 .schacht-aktionszelle {
     display: flex;
     align-items: center;
-    gap: 0.3rem;
+    justify-content: flex-end;
+    gap: 0.25rem;
 }
 
 .schacht-aktionszelle .btn-laden,
@@ -892,21 +939,25 @@ dialog.dialog-fallback-offen {
     align-items: center;
     margin: 0.28rem 0 0;
     padding: 0.08rem 0.32rem;
-    border-radius: 3px;
-    background: #dbeafe;
-    color: #155abf;
+    border-radius: var(--radius-xs);
+    background: var(--flaeche-akzent-stark);
+    color: var(--farbeakzent-hover);
     font-size: 0.66rem;
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.04em;
 }
 
+#schachtListeTabelle tr.schacht-liste-aktuell {
+    box-shadow: inset 3px 0 0 var(--farbeakzent);
+}
+
 #schachtListeTabelle tr.schacht-liste-ausgewaehlt td {
-    background: #eef6ff;
+    background: var(--flaeche-akzent-hell);
 }
 
 #schachtListeTabelle tr.schacht-liste-aktuell td {
-    background: #e8f1fc;
+    background: var(--zeile-aktuell-bg);
 }
 
 #schachtListeTabelle tr[hidden] {
@@ -940,6 +991,10 @@ dialog.dialog-fallback-offen {
     display: flex;
     align-items: center;
     gap: 0.4rem;
+    padding: 0.38rem 0.45rem;
+    border: 1px solid var(--farberahmen);
+    border-radius: var(--radius-md);
+    background: var(--flaeche);
 }
 
 .panel-daten-label {
@@ -953,9 +1008,9 @@ dialog.dialog-fallback-offen {
 }
 
 .panel-daten-gruppe button {
-    background: #fff;
+    background: var(--flaeche);
     border: 1px solid var(--farberahmen);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     padding: 0.3rem 0.7rem;
     font-size: 0.8rem;
     font-weight: 600;
@@ -971,20 +1026,21 @@ dialog.dialog-fallback-offen {
 }
 
 .panel-daten-gefahr {
-    border-left: 1px solid var(--farberahmen);
-    padding-left: 1rem;
     margin-left: auto;
+    background: transparent;
+    border-color: transparent;
 }
 
 .btn-gefahr {
-    border-color: var(--farbefehler) !important;
+    background: transparent !important;
+    border-color: var(--gefahr-border) !important;
     color: var(--farbefehler) !important;
 }
 
 .btn-gefahr:hover {
-    background-color: var(--farbefehler) !important;
+    background-color: var(--gefahr-bg) !important;
     border-color: var(--farbefehler) !important;
-    color: #fff !important;
+    color: var(--farbefehler) !important;
 }
 
 .liste-leer {
@@ -997,8 +1053,8 @@ dialog.dialog-fallback-offen {
     background-color: var(--farbeakzent);
     color: #fff;
     border: none;
-    border-radius: 4px;
-    padding: 0.25rem 0.6rem;
+    border-radius: var(--radius-sm);
+    padding: 0.28rem 0.62rem;
     cursor: pointer;
     font-size: 0.78rem;
     font-weight: 600;
@@ -1006,28 +1062,30 @@ dialog.dialog-fallback-offen {
     transition: background-color 0.15s;
 }
 
-.btn-laden:hover { background-color: #155abf; }
+.btn-laden:hover { background-color: var(--farbeakzent-hover); }
 
 .btn-loeschen {
     background-color: transparent;
-    color: var(--farbefehler);
-    border: 1px solid var(--farbefehler);
-    border-radius: 4px;
-    padding: 0.25rem 0.5rem;
+    color: #9f1d1d;
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    padding: 0.28rem 0.46rem;
     cursor: pointer;
     font-size: 0.78rem;
-    transition: background-color 0.15s, color 0.15s;
+    transition: background-color 0.15s, border-color 0.15s, color 0.15s;
 }
 
 .btn-loeschen:hover {
-    background-color: var(--farbefehler);
-    color: #fff;
+    background-color: var(--gefahr-bg);
+    border-color: var(--gefahr-border);
+    color: var(--farbefehler);
 }
 
 .panel-daten-gruppe--export {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 0.4rem;
+    flex: 1 1 300px;
 }
 
 .panel-daten-gruppe--export .panel-daten-label {
@@ -1039,8 +1097,7 @@ dialog.dialog-fallback-offen {
 }
 
 .panel-daten-gruppe--import {
-    padding-top: 0.55rem;
-    border-top: 1px solid var(--farberahmen);
+    flex: 0 0 auto;
 }
 
 /* ── Feste Schacht-Seitenleiste ab Tablet im Querformat ── */
@@ -1073,8 +1130,8 @@ dialog.dialog-fallback-offen {
 
     .panel-werkzeuge {
         grid-template-columns: 1fr;
-        gap: 0.35rem;
-        padding: 0.65rem 0.75rem;
+        gap: 0.3rem;
+        padding: 0.58rem 0.7rem;
     }
 
     #schachtAnzahl {
@@ -1083,19 +1140,19 @@ dialog.dialog-fallback-offen {
     }
 
     .panel-auswahl {
-        padding: 0.5rem 0.75rem;
+        padding: 0.45rem 0.7rem;
     }
 
     .panel-inhalt {
-        padding: 0.55rem 0.75rem 0.75rem;
+        padding: 0.45rem 0.65rem 0.65rem;
         background: #f5f7fa;
     }
 
     .panel-footer {
         align-items: stretch;
         flex-direction: column;
-        gap: 0.55rem;
-        padding: 0.65rem 0.75rem;
+        gap: 0.35rem;
+        padding: 0.5rem 0.6rem;
     }
 
     .panel .lokaldaten-hinweis {
@@ -1106,7 +1163,7 @@ dialog.dialog-fallback-offen {
 
     .panel-daten-hinweis {
         width: 100%;
-        color: #6b7280;
+        color: var(--text-muted);
         font-size: 0.72rem;
     }
 
@@ -1120,15 +1177,51 @@ dialog.dialog-fallback-offen {
     }
 
     .panel-daten-gruppe {
-        flex-wrap: wrap;
+        flex-wrap: nowrap;
+        padding: 0.3rem 0;
+        border: none;
+        border-top: 1px solid var(--farberahmen);
+        border-radius: 0;
+        background: transparent;
     }
 
     .panel-daten-gefahr {
         margin-left: 0;
-        padding-top: 0.55rem;
+        padding-top: 0.3rem;
         padding-left: 0;
-        border-top: 1px solid var(--farberahmen);
         border-left: none;
+    }
+
+    .panel-daten-gruppe--export {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        flex: none;
+    }
+
+    .panel-daten-gruppe--export .panel-daten-label {
+        grid-column: 1 / -1;
+    }
+
+    .panel-daten-gruppe--export button {
+        min-height: 28px;
+        padding: 0.24rem 0.55rem;
+    }
+
+    .panel-daten-gruppe--export button[data-action="export-alle-pdf"] {
+        grid-column: 1;
+    }
+
+    .panel-daten-gruppe--import,
+    .panel-daten-gefahr {
+        display: grid;
+        grid-template-columns: 84px minmax(0, max-content);
+        align-items: center;
+        justify-content: start;
+    }
+
+    .panel-daten-gruppe--import button,
+    .panel-daten-gefahr button {
+        min-height: 28px;
+        padding: 0.24rem 0.55rem;
     }
 
     #schachtListeTabelle,
@@ -1143,17 +1236,17 @@ dialog.dialog-fallback-offen {
 
     #schachtListeTabelle tr {
         display: grid;
-        grid-template-columns: 24px minmax(0, 1fr) auto;
+        grid-template-columns: 24px minmax(0, 1fr) 118px;
         grid-template-areas:
             "auswahl schacht aktionen"
             ". details details";
-        column-gap: 0.5rem;
-        row-gap: 0.25rem;
-        margin-bottom: 0.4rem;
-        padding: 0.55rem;
+        column-gap: 0.45rem;
+        row-gap: 0.18rem;
+        margin-bottom: 0.32rem;
+        padding: 0.44rem 0.48rem;
         border: 1px solid var(--farberahmen);
-        border-radius: 6px;
-        background: #fff;
+        border-radius: var(--radius-md);
+        background: var(--flaeche);
     }
 
     #schachtListeTabelle td {
@@ -1173,18 +1266,17 @@ dialog.dialog-fallback-offen {
 
     #schachtListeTabelle td.schacht-meta {
         display: inline;
-        color: #596273;
-        font-size: 0.75rem;
+        color: var(--text-soft);
+        font-size: 0.72rem;
         white-space: normal;
     }
 
     #schachtListeTabelle td.schacht-meta--typ::before {
-        content: "Typ: ";
-        font-weight: 700;
+        content: "";
     }
 
     #schachtListeTabelle td.schacht-meta--datum::before {
-        content: " · Datum: ";
+        content: " · " attr(data-label) ": ";
         font-weight: 700;
     }
 
@@ -1200,7 +1292,7 @@ dialog.dialog-fallback-offen {
         white-space: nowrap;
     }
 
-    #schachtListeTabelle td.schacht-meta[hidden] {
+    #schachtListeTabelle td.schacht-meta--leer {
         display: none !important;
     }
 
@@ -1210,35 +1302,50 @@ dialog.dialog-fallback-offen {
     }
 
     #schachtListeTabelle tr.schacht-ohne-typ td.schacht-meta--datum::before {
-        content: "Datum: ";
+        content: attr(data-label) ": ";
+    }
+
+    #schachtListeTabelle td.schacht-meta--datum::before {
+        content: " · ";
+    }
+
+    #schachtListeTabelle tr.schacht-ohne-typ td.schacht-meta--datum::before {
+        content: "";
     }
 
     #schachtListeTabelle td:nth-child(2) strong {
-        font-size: 0.86rem;
+        font-size: 0.82rem;
         line-height: 1.2;
     }
 
     #schachtListeTabelle td:nth-child(2) small {
+        margin-top: 0.08rem;
+        font-size: 0.68rem;
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
     }
 
     #schachtListeTabelle .schacht-aktionszelle {
-        justify-content: flex-end;
-        gap: 0.8rem;
+        align-self: center;
+        display: grid;
+        grid-template-columns: repeat(2, 56px);
+        justify-content: end;
+        gap: 0.25rem;
+        width: 118px;
     }
 
     #schachtListeTabelle .schacht-aktionszelle .btn-laden,
     #schachtListeTabelle .schacht-aktionszelle .btn-loeschen {
-        padding: 0.25rem 0.45rem;
-        font-size: 0.72rem;
+        padding: 0.22rem 0.45rem;
+        font-size: 0.7rem;
+        width: 56px;
     }
 
     #schachtListeTabelle .schacht-aktionszelle .btn-laden,
     #schachtListeTabelle .btn-schacht-loeschen {
-        min-width: 64px;
-        min-height: 28px;
+        min-width: 0;
+        min-height: 26px;
         text-align: center;
     }
 
@@ -1248,13 +1355,13 @@ dialog.dialog-fallback-offen {
     }
 
     #schachtListeTabelle tr.schacht-liste-ausgewaehlt {
-        border-color: #9cc3ec;
-        background: #f4f9ff;
+        border-color: var(--zeile-auswahl-border);
+        background: var(--zeile-auswahl-bg);
     }
 
     #schachtListeTabelle tr.schacht-liste-ausgewaehlt.schacht-liste-aktuell {
         border-color: var(--farbeakzent);
-        background: #eef6ff;
+        background: var(--flaeche-akzent-hell);
     }
 
     #schachtListeTabelle tr.schacht-liste-aktuell td {
@@ -1281,27 +1388,37 @@ dialog.dialog-fallback-offen {
     left: 0;
     right: 0;
     background-color: var(--farbemenu);
-    color: #7a9cc4;
+    color: var(--text-nav-muted);
     font-size: 0.75rem;
-    padding: 0.28rem 1rem;
+    padding: 0.24rem 1rem;
     display: flex;
     justify-content: space-between;
     align-items: center;
+    gap: 0.75rem;
     z-index: 90;
 }
 
 .statusbar-copyright {
-    opacity: 0.5;
+    flex: 1 1 0;
+    opacity: 0.42;
+}
+
+#statusbar-text {
+    flex: 1 1 0;
+    text-align: right;
+    color: var(--farbemenu-text);
+    opacity: 0.82;
 }
 
 .speicherstatus {
     border: 1px solid rgba(255, 255, 255, 0.18);
-    border-radius: 4px;
-    padding: 0.12rem 0.45rem;
-    font-size: 0.72rem;
+    border-radius: 999px;
+    padding: 0.12rem 0.55rem;
+    font-size: 0.73rem;
     font-weight: 700;
     color: #dbeafe;
     background: rgba(255, 255, 255, 0.08);
+    white-space: nowrap;
 }
 
 .speicherstatus--checking {
@@ -1332,9 +1449,9 @@ dialog.dialog-fallback-offen {
     background-color: var(--farbemenu);
     color: var(--farbemenu-text);
     padding: 0.55rem 1.1rem;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     font-size: 0.88rem;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.22);
+    box-shadow: var(--schatten-toast);
     opacity: 0;
     transform: translateY(8px);
     transition: opacity 0.2s, transform 0.2s;
@@ -1351,13 +1468,13 @@ dialog.dialog-fallback-offen {
 .toast--error  { background-color: var(--farbefehler); }
 .toast--info   { background-color: var(--farbeakzent); }
 .toast--success { background-color: var(--farbeerfolg); }
-.toast--warn   { background-color: #e65100; }
+.toast--warn   { background-color: var(--farbewarnung); }
 
 /* ── Bestätigungs-Dialog ── */
 .confirm-dialog {
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     border: 1px solid var(--farberahmen);
-    box-shadow: 0 8px 24px rgba(0,0,0,0.2);
+    box-shadow: var(--schatten-dialog);
     padding: 1.5rem;
     min-width: 260px;
     max-width: 360px;
@@ -1379,7 +1496,7 @@ dialog.dialog-fallback-offen {
 .btn-confirm-nein {
     background: none;
     border: 1px solid var(--farberahmen);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     padding: 0.4rem 1rem;
     cursor: pointer;
     font-size: 0.88rem;
@@ -1391,7 +1508,7 @@ dialog.dialog-fallback-offen {
 .btn-confirm-ja {
     background: var(--farbeakzent);
     border: none;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     padding: 0.4rem 1rem;
     cursor: pointer;
     font-size: 0.88rem;
@@ -1399,7 +1516,7 @@ dialog.dialog-fallback-offen {
     color: #fff;
 }
 
-.btn-confirm-ja:hover { background: #155abf; }
+.btn-confirm-ja:hover { background: var(--farbeakzent-hover); }
 
 @media screen {
     .erfassungsumfang-leiste {
@@ -1430,9 +1547,9 @@ dialog.dialog-fallback-offen {
         margin: 0.55rem 0 0;
         padding: 0.75rem;
         border: 1px dashed var(--farberahmen);
-        border-radius: 4px;
-        color: #6b7280;
-        background: #f8f9fb;
+        border-radius: var(--radius-sm);
+        color: var(--text-muted);
+        background: var(--flaeche-mild);
         text-align: center;
         font-size: 0.88rem;
     }
@@ -1468,9 +1585,9 @@ dialog.dialog-fallback-offen {
         display: flex;
         flex-direction: column;
         border: 1px solid var(--farberahmen);
-        border-radius: 8px;
+        border-radius: var(--radius-lg);
         overflow: hidden;
-        background: #fff;
+        background: var(--flaeche);
     }
 
     .zustand-tabelle th,
@@ -1483,12 +1600,20 @@ dialog.dialog-fallback-offen {
     }
 
     .zustand-tabelle th {
-        background: #eef1f5;
+        background: var(--flaeche-muted);
         padding: 0.55rem 0.65rem;
     }
 
     .zustand-tabelle td {
         padding: 0.25rem 0.65rem;
+    }
+
+    .zustand-tabelle td:nth-child(odd) {
+        background: var(--flaeche);
+    }
+
+    .zustand-tabelle td:nth-child(even) {
+        background: var(--flaeche-mild);
     }
 
     .zustand-tabelle td:last-child {
@@ -1500,14 +1625,14 @@ dialog.dialog-fallback-offen {
         min-height: 38px;
         align-items: center;
         width: 100%;
-        border-radius: 4px;
+        border-radius: var(--radius-sm);
         padding: 0.35rem 0.4rem;
         white-space: normal;
     }
 
     .zustand-tabelle label:has(input:checked) {
-        background: #eaf2ff;
-        color: #123f73;
+        background: var(--flaeche-akzent);
+        color: var(--text-akzent-dunkel);
         font-weight: 700;
     }
 
@@ -1521,13 +1646,13 @@ dialog.dialog-fallback-offen {
     .fotos-container--leer::before {
         content: "Keine Fotos";
         grid-column: 1 / -1;
-        color: #6b7280;
+        color: var(--text-muted);
         font-size: 0.88rem;
     }
 
     #fotoZaehler {
         float: right;
-        color: #6b7280;
+        color: var(--text-muted);
         font-size: 0.76rem;
         font-weight: 700;
     }
@@ -1556,11 +1681,11 @@ dialog.dialog-fallback-offen {
     * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 
     body {
-        background: #fff;
+        background: var(--flaeche);
         padding: 0;
         font-size: 8.5pt;
         color: #111;
-        font-family: 'Figtree', system-ui, sans-serif;
+        font-family: var(--schrift);
     }
 
     /* ─ Hide screen UI ─ */
@@ -1630,7 +1755,7 @@ dialog.dialog-fallback-offen {
     .print-summary-record-titel span,
     .print-summary-record-meta span {
         font-size: 7pt;
-        color: #505866;
+        color: var(--text-label);
     }
 
     .print-summary-record-meta {
@@ -1746,7 +1871,7 @@ dialog.dialog-fallback-offen {
 
     .print-summary-media-item--skizze img {
         object-fit: contain;
-        background: #fff;
+        background: var(--flaeche);
     }
 
     /* Skizze bleibt links in fester Breite, Fotos füllen die rechte Seite. */
@@ -1754,7 +1879,7 @@ dialog.dialog-fallback-offen {
         flex: 0 0 42%;
     }
 
-    /* Rechte Seite: bis zu 8 Fotos in 4 Spalten / 2 Zeilen. */
+    /* Rechte Seite: Fotos in 4 Spalten; weitere Fotos laufen in neue Zeilen. */
     .print-summary-media-fotos {
         flex: 1;
         min-width: 0;
@@ -2018,7 +2143,7 @@ dialog.dialog-fallback-offen {
         align-content: start;
         gap: 5pt;
         background: transparent;
-        border-radius: 4px;
+        border-radius: var(--radius-sm);
         width: 100%;
         height: auto;
         min-height: 0;
@@ -2027,7 +2152,7 @@ dialog.dialog-fallback-offen {
 
     .foto-wrapper {
         overflow: hidden;
-        border-radius: 4px;
+        border-radius: var(--radius-sm);
         background: #e0e0e0;
         aspect-ratio: 4 / 3;
         page-break-inside: avoid;
@@ -2175,7 +2300,7 @@ dialog.dialog-fallback-offen {
 
     .container {
         padding: 0.75rem;
-        border-radius: 8px;
+        border-radius: var(--radius-lg);
     }
 
     .feld-zeile {
@@ -2232,8 +2357,8 @@ dialog.dialog-fallback-offen {
     .zustand-tabelle tr,
     #schachtListeTabelle tr {
         border: 1px solid var(--farberahmen);
-        border-radius: 8px;
-        background: #fff;
+        border-radius: var(--radius-lg);
+        background: var(--flaeche);
         margin-bottom: 0.65rem;
         overflow: hidden;
     }
@@ -2241,7 +2366,7 @@ dialog.dialog-fallback-offen {
     #tblleitungen td,
     #schachtListeTabelle td {
         border: none;
-        border-bottom: 1px solid #edf0f3;
+        border-bottom: 1px solid var(--linie-subtil);
         display: grid;
         grid-template-columns: minmax(92px, 34%) 1fr;
         gap: 0.5rem;
@@ -2255,11 +2380,15 @@ dialog.dialog-fallback-offen {
     #tblleitungen td::before,
     #schachtListeTabelle td::before {
         content: attr(data-label);
-        color: #6b7280;
+        color: var(--text-muted);
         font-weight: 700;
         font-size: 0.76rem;
         text-transform: uppercase;
         letter-spacing: 0.04em;
+    }
+
+    #schachtListeTabelle td.schacht-meta::before {
+        content: "";
     }
 
     #tblleitungen td:last-child,
@@ -2281,7 +2410,7 @@ dialog.dialog-fallback-offen {
 
     .zustand-tabelle th {
         border: none;
-        background: #eef1f5;
+        background: var(--flaeche-muted);
         color: var(--farbefont);
         padding: 0.55rem 0.65rem;
         font-size: 0.88rem;
@@ -2289,9 +2418,17 @@ dialog.dialog-fallback-offen {
 
     .zustand-tabelle td {
         border: none;
-        border-top: 1px solid #edf0f3;
+        border-top: 1px solid var(--linie-subtil);
         padding: 0;
         min-width: 0;
+    }
+
+    .zustand-tabelle td:nth-child(odd) {
+        background: var(--flaeche);
+    }
+
+    .zustand-tabelle td:nth-child(even) {
+        background: var(--flaeche-mild);
     }
 
     .zustand-tabelle label {
@@ -2334,7 +2471,7 @@ dialog.dialog-fallback-offen {
     }
 
     .panel-inhalt {
-        padding: 0.65rem;
+        padding: 0.65rem 0.65rem 0.75rem;
     }
 
     #schachtListeTabelle {
@@ -2342,10 +2479,80 @@ dialog.dialog-fallback-offen {
         table-layout: auto;
     }
 
-    #schachtListeTabelle td.schacht-aktionszelle {
+    #schachtListeTabelle tr {
+        display: grid;
+        grid-template-columns: 28px minmax(0, 1fr);
+        grid-template-areas:
+            "auswahl schacht"
+            ". meta"
+            "aktionen aktionen";
+        gap: 0;
+        padding: 0.45rem 0.5rem;
+        margin-bottom: 0.42rem;
+    }
+
+    #schachtListeTabelle td {
+        display: block;
+        min-height: 0;
+        padding: 0;
+        border-bottom: none;
+        background: transparent;
+        text-align: left;
+    }
+
+    #schachtListeTabelle td::before {
+        content: "";
+        display: none;
+    }
+
+    #schachtListeTabelle td:nth-child(1) { grid-area: auswahl; }
+    #schachtListeTabelle td:nth-child(2) { grid-area: schacht; }
+    #schachtListeTabelle td:nth-child(3) { grid-area: meta; }
+    #schachtListeTabelle td:nth-child(4) { grid-area: meta; }
+    #schachtListeTabelle td:nth-child(5) { grid-area: aktionen; }
+
+    #schachtListeTabelle .schacht-auswahl-zelle {
         display: flex;
-        flex-wrap: wrap;
-        gap: 0.35rem;
+        align-items: flex-start;
+        justify-content: center;
+        padding-top: 0.05rem;
+    }
+
+    #schachtListeTabelle td:nth-child(2) strong {
+        font-size: 0.88rem;
+        line-height: 1.2;
+    }
+
+    #schachtListeTabelle td:nth-child(2) small {
+        margin-top: 0.05rem;
+        font-size: 0.7rem;
+    }
+
+    #schachtListeTabelle td.schacht-meta {
+        display: inline;
+        color: var(--text-soft);
+        font-size: 0.74rem;
+        text-align: left;
+        padding-top: 0.12rem;
+        line-height: 1.25;
+    }
+
+    #schachtListeTabelle td.schacht-meta--datum::before,
+    #schachtListeTabelle tr.schacht-ohne-typ td.schacht-meta--datum::before {
+        content: " · ";
+    }
+
+    #schachtListeTabelle tr.schacht-ohne-typ td.schacht-meta--datum::before {
+        content: "";
+    }
+
+    #schachtListeTabelle td.schacht-aktionszelle {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+        gap: 0.45rem;
+        padding-top: 0.42rem;
+        width: 100%;
+        align-items: stretch;
     }
 
     #schachtListeTabelle td.schacht-aktionszelle::before {
@@ -2354,8 +2561,21 @@ dialog.dialog-fallback-offen {
 
     #schachtListeTabelle td.schacht-aktionszelle .btn-laden,
     #schachtListeTabelle td.schacht-aktionszelle .btn-loeschen {
-        flex: 1 1 120px;
-        min-height: 40px;
+        width: 100%;
+        min-height: 34px;
+        margin: 0;
+        padding: 0.32rem 0.55rem;
+        font-size: 0.74rem;
+        text-align: center;
+    }
+
+    #schachtListeTabelle td.schacht-aktionszelle .btn-loeschen {
+        border-color: transparent;
+        background: transparent;
+    }
+
+    #schachtListeTabelle td.schacht-meta--leer {
+        display: none;
     }
 
     .panel-footer,

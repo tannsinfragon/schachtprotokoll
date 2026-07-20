@@ -138,7 +138,7 @@
                 writeU32(local, 22, dataBytes.length);
                 writeU16(local, 26, nameBytes.length);
                 local.set(nameBytes, 30);
-                localParts.push(local, dataBytes);
+                localParts.push(local, isBlob(originalData) ? originalData : dataBytes);
 
                 const central = new Uint8Array(46 + nameBytes.length);
                 writeU32(central, 0, 0x02014b50);
@@ -176,5 +176,5 @@
         }
     }
 
-    global.SchachtZip = { ZipWriter, dataUrlToBytes, dataUrlMime };
+    global.SchachtZip = { ZipWriter, dataUrlToBytes, dataUrlMime, isBlob };
 })(window);

@@ -19,6 +19,28 @@ const IMPORT_MAX_LEITUNGEN = window.AppConfig?.import?.maxLeitungenPerRecord || 
 const IMPORT_MAX_STRICHE = window.AppConfig?.import?.maxStrokesPerRecord || 1000;
 const BACKUP_ERINNERUNG_TAGE = window.AppConfig?.storage?.backupReminderDays || 30;
 const EXPORT_MAX_MEDIEN_BYTES = window.AppConfig?.storage?.maxExportMediaBytes || 250 * 1024 * 1024;
+const RECORD_STATUS = Object.freeze({
+    DRAFT: 'draft',
+    SAVED: 'saved'
+});
+
+function recordStatusNormalisieren(record, fallback = RECORD_STATUS.SAVED) {
+    const status = record?.status;
+    if (status === RECORD_STATUS.DRAFT || status === RECORD_STATUS.SAVED) return status;
+    if (record?._leerentwurf === true) return RECORD_STATUS.DRAFT;
+    return fallback;
+}
+
+function recordIstEntwurf(record) {
+    return recordStatusNormalisieren(record) === RECORD_STATUS.DRAFT;
+}
+
+function recordStatusSetzen(record, status = RECORD_STATUS.SAVED) {
+    const daten = record || {};
+    daten.status = recordStatusNormalisieren({ status }, RECORD_STATUS.SAVED);
+    delete daten._leerentwurf;
+    return daten;
+}
 
 // ============================================================
 // DB – IndexedDB Datenbankschicht
@@ -73,6 +95,7 @@ const DB = (() => {
             const tx = db.transaction(STORE, 'readwrite');
             const store = tx.objectStore(STORE);
             const now = new Date().toISOString();
+            recordStatusSetzen(schacht, recordStatusNormalisieren(schacht));
             if (!schacht.erstellt_am) schacht.erstellt_am = now;
             schacht.geaendert_am = now;
             schacht.version = (schacht.version || 0) + 1;
@@ -152,6 +175,7 @@ const DB = (() => {
                 delete daten._import_ziel_id;
                 delete daten._import_erstellt_am;
                 delete daten._import_version;
+                recordStatusSetzen(daten, recordStatusNormalisieren(daten, RECORD_STATUS.SAVED));
                 if (zielId) {
                     daten.id = zielId;
                     store.put(daten);
@@ -276,8 +300,7 @@ const App = {
         try {
             await Sketch.ready();
             if (token !== App.state.recordToken) return;
-            const schacht = Schacht.sammeln();
-            schacht._leerentwurf = false;
+            const schacht = recordStatusSetzen(Schacht.sammeln(), RECORD_STATUS.SAVED);
             const id = await DB.speichern(schacht);
             if (token !== App.state.recordToken) return;
             App.state.currentSchachtId = id;
@@ -291,7 +314,7 @@ const App = {
             App.speicherfehlerAusblenden();
             speicherplatzPruefen();
             const liste = document.getElementById('schachtListe');
-            if (liste?.classList.contains('offen') || schachtSeitenleisteAktiv()) schachtListeAktualisieren();
+            if (liste?.classList.contains('offen') || schachtSeitenleisteAktiv()) schachtListeRecordAktualisieren(id);
             return true;
         } catch (e) {
             console.error('[DB] Auto-Save Fehler:', e);
@@ -961,6 +984,7 @@ function zustandsOptionenText(zustandsliste, gruppeKey) {
 }
 
 function istBlob(value) {
+    if (window.SchachtZip?.isBlob) return window.SchachtZip.isBlob(value);
     return Boolean(value && typeof value === 'object' &&
         ((typeof Blob !== 'undefined' && value instanceof Blob) || Object.prototype.toString.call(value) === '[object Blob]') &&
         typeof value.arrayBuffer === 'function' && typeof value.size === 'number');
@@ -1031,9 +1055,19 @@ async function fotosAlsDataUrls(fotos) {
     return result.filter(Boolean);
 }
 
-async function recordFuerExport(record) {
+async function recordFuerExport(record, optionen = {}) {
+    const { medien = true } = optionen;
+    const exportRecord = { ...record };
+    delete exportRecord._leerentwurf;
+    delete exportRecord.status;
+    if (!medien) {
+        exportRecord.fotos = [];
+        exportRecord.skizze = '';
+        exportRecord.skizze_basis = '';
+        return exportRecord;
+    }
     return {
-        ...record,
+        ...exportRecord,
         fotos: await fotosAlsDataUrls(record?.fotos)
     };
 }
@@ -1047,6 +1081,8 @@ function importRecordNormalisieren(raw) {
     delete s.erstellt_am;
     delete s.geaendert_am;
     delete s.version;
+    delete s._leerentwurf;
+    delete s.status;
     Object.entries(s).forEach(([feld, value]) => {
         if (typeof value === 'string' && !['skizze', 'skizze_basis'].includes(feld) && value.length > IMPORT_MAX_TEXT) {
             throw new Error(`Textfeld «${feld}» ist länger als ${IMPORT_MAX_TEXT} Zeichen`);
@@ -1137,13 +1173,14 @@ function backupZeitMerken(typ = 'vollstaendig') {
     }
 }
 
-async function jsonPayloadErstellen(records) {
-    const exportRecords = await Promise.all(records.map(recordFuerExport));
+async function jsonPayloadErstellen(records, optionen = {}) {
+    const medien = optionen.medien !== false;
+    const exportRecords = await Promise.all(records.map(record => recordFuerExport(record, { medien })));
     return {
         schema_version: EXPORT_SCHEMA_VERSION,
         app_version: APP_VERSION,
         exported_at: new Date().toISOString(),
-        media_included: true,
+        media_included: medien,
         records: exportRecords
     };
 }
@@ -1726,8 +1763,7 @@ async function neuerSchacht() {
 
     try {
         await Sketch.ready();
-        const neuerEntwurf = Schacht.sammeln();
-        neuerEntwurf._leerentwurf = true;
+        const neuerEntwurf = recordStatusSetzen(Schacht.sammeln(), RECORD_STATUS.DRAFT);
         const id = await DB.speichern(neuerEntwurf);
         App.state.currentSchachtId = id;
         App.state.dirty = false;
@@ -1736,6 +1772,10 @@ async function neuerSchacht() {
         App.toast('Neuer Schacht als Entwurf gespeichert', 'success');
     } catch (error) {
         console.error('Neuen Schacht nicht speichern:', error);
+        if (error?.name === 'QuotaExceededError') {
+            App.setStorageStatus('blocked', 'Speicher voll: JSON-Backup exportieren und Fotos reduzieren.');
+        }
+        App.speicherfehlerAnzeigen(`Neuer Schacht konnte nicht gespeichert werden: ${error.message || 'Unbekannter Fehler'}`);
         App.toast('Neuer Schacht konnte nicht gespeichert werden.', 'fehler');
     }
 }
@@ -1859,7 +1899,7 @@ function zustandFuerDruck(data) {
 }
 
 function printSummaryMedien(parent, data) {
-    const fotos = (data.fotos || []).filter(Boolean).slice(0, 8);
+    const fotos = (data.fotos || []).filter(Boolean);
     const hatSkizze = data.skizze_genutzt === true && hatWert(data.skizze);
     if (!hatSkizze && !fotos.length) return false;
     const section = el('section', 'print-summary-section print-summary-section--medien');
@@ -2031,13 +2071,17 @@ async function printpdf() {
     setTimeout(cleanup, 60000);
 }
 
+async function exportRecordsAufloesen(records) {
+    const exportRecords = records ?? await schachtExportRecordsErmitteln();
+    return exportRecords?.length ? [...exportRecords] : null;
+}
+
 async function exportAllePDF(records = null) {
     try {
         if (!await App.aenderungenSpeichern()) return;
 
-        const exportRecords = records ?? await schachtExportRecordsErmitteln();
-        if (!exportRecords?.length) return;
-        const alle = [...exportRecords];
+        const alle = await exportRecordsAufloesen(records);
+        if (!alle) return;
 
         const fotoAnzahl = alle.reduce((summe, record) => summe + (record.fotos || []).length, 0);
         if (fotoAnzahl > 100 && !await bestaetigen(`${fotoAnzahl} Fotos können ein sehr grosses PDF erzeugen. Fortfahren?`)) return;
@@ -2113,13 +2157,23 @@ async function mediumAlsZipBytes(medium) {
         if (bytes.byteLength) return bytes;
     }
 
-    const blob = dataUrlZuBlob(medium);
-    if (blob) {
-        const bytes = new Uint8Array(await blob.arrayBuffer());
+    if (istDataUrl(medium)) {
+        const bytes = window.SchachtZip.dataUrlToBytes(medium);
         if (bytes.byteLength) return bytes;
     }
 
     throw new Error('Bild enthält keine lesbaren Binärdaten');
+}
+
+async function mediumAlsZipBytesOderNull(medium, kontext = 'Medium') {
+    try {
+        if (istBlob(medium)) return medium.size > 0 ? medium : null;
+        const bytes = await mediumAlsZipBytes(medium);
+        return bytes?.byteLength ? bytes : null;
+    } catch (error) {
+        console.warn(`[Export] ${kontext} Ã¼bersprungen:`, error);
+        return null;
+    }
 }
 
 function bildAusDataUrl(dataUrl) {
@@ -2203,55 +2257,54 @@ async function recordHatSkizze(record) {
 }
 
 function schachtOrdner(record, index) {
-    const bezeichnung = record.nummer || record.id || index + 1;
+    const bezeichnung = [index + 1, record.gemeinde, record.strasse, record.nummer || record.id || 'ohne_nummer']
+        .filter(hatWert)
+        .join('_');
     return `schacht_${dateinameSicher(bezeichnung)}`;
 }
 
+function medienBytesGesamt(records, faktor = 1) {
+    return records.reduce((summe, record) => {
+        const fotoBytes = (record.fotos || []).reduce((teil, foto) => teil + (istBlob(foto) ? foto.size : Math.ceil(String(foto || '').length * 0.75)), 0);
+        const skizzenBytes = hatWert(record.skizze) ? Math.ceil(String(record.skizze || '').length * 0.75) : 0;
+        return summe + Math.ceil((fotoBytes + skizzenBytes) * faktor);
+    }, 0);
+}
 
-async function exportBilderZIP(records = null) {
-    try {
-        if (!await App.aenderungenSpeichern()) return;
-        const exportRecords = records ?? await schachtExportRecordsErmitteln();
-        if (!exportRecords?.length) return;
-        const alle = [...exportRecords];
-        if (!window.SchachtZip?.ZipWriter) throw new Error('ZIP-Writer nicht geladen');
-        const medienBytes = alle.reduce((summe, record) => {
-            const fotoBytes = (record.fotos || []).reduce((teil, foto) => teil + (istBlob(foto) ? foto.size : Math.ceil(String(foto || '').length * 0.75)), 0);
-            const skizzenBytes = record.skizze_genutzt ? Math.ceil(String(record.skizze || '').length * 0.75) : 0;
-            return summe + fotoBytes + skizzenBytes;
-        }, 0);
-        if (medienBytes > EXPORT_MAX_MEDIEN_BYTES) {
-            throw new Error(`Medienumfang ${Math.round(medienBytes / 1024 / 1024)} MB überschreitet die Grenze von ${Math.round(EXPORT_MAX_MEDIEN_BYTES / 1024 / 1024)} MB`);
-        }
-        const zip = new window.SchachtZip.ZipWriter();
-        let exportierteDateien = 0;
-
-        for (let i = 0; i < alle.length; i++) {
-            const s = alle[i];
-            const ordner = schachtOrdner(s, i);
-            const fotos = (s.fotos || []).filter(Boolean);
-            for (let fotoIndex = 0; fotoIndex < fotos.length; fotoIndex++) {
-                const foto = fotos[fotoIndex];
-                const endung = mediumEndung(foto);
-                const dateiname = `${ordner}/foto_${fotoIndex + 1}.${endung}`;
-                const bildBytes = await mediumAlsZipBytes(foto);
-                zip.file(dateiname, bildBytes);
-                exportierteDateien++;
-            }
-            if (await recordHatSkizze(s)) {
-                const dateiname = `${ordner}/skizze.png`;
-                zip.file(dateiname, await mediumAlsZipBytes(s.skizze));
-                exportierteDateien++;
-            }
-        }
-
-        if (!exportierteDateien) { App.toast('Keine Fotos oder genutzten Skizzen vorhanden.', 'warn'); return; }
-        const blob = await zip.generateAsync({ type: 'blob', mimeType: 'application/zip' });
-        downloadBlob(blob, `schachtprotokoll_bilder_${dateiDatum()}.zip`);
-        App.toast(`Bilder von ${alle.length} Schacht${alle.length !== 1 ? 'e' : ''} exportiert.`, 'success');
-    } catch (e) {
-        App.toast('Bilder-ZIP fehlgeschlagen: ' + e.message, 'error');
+function medienGroesenlimitPruefen(records, faktor = 1) {
+    const medienBytes = medienBytesGesamt(records, faktor);
+    if (medienBytes > EXPORT_MAX_MEDIEN_BYTES) {
+        throw new Error(`Medienumfang ${Math.round(medienBytes / 1024 / 1024)} MB überschreitet die Grenze von ${Math.round(EXPORT_MAX_MEDIEN_BYTES / 1024 / 1024)} MB`);
     }
+}
+
+async function zipMedienDateienHinzufuegen(zip, record, ordner, optionen = {}) {
+    const { bilderUnterordner = '', manifest = null } = optionen;
+    const prefix = bilderUnterordner ? `${ordner}/${bilderUnterordner}` : ordner;
+    const fotos = (record.fotos || []).filter(Boolean);
+    let exportierteDateien = 0;
+
+    for (let fotoIndex = 0; fotoIndex < fotos.length; fotoIndex++) {
+        const foto = fotos[fotoIndex];
+        const dateiname = `${prefix}/foto_${fotoIndex + 1}.${mediumEndung(foto)}`;
+        const bytes = await mediumAlsZipBytesOderNull(foto, dateiname);
+        if (!bytes) continue;
+        zip.file(dateiname, bytes);
+        manifest?.push({ pfad: dateiname, typ: 'foto', schacht_id: record.id ?? null, index: fotoIndex + 1 });
+        exportierteDateien++;
+    }
+
+    if (await recordHatSkizze(record)) {
+        const dateiname = `${prefix}/skizze.png`;
+        const bytes = await mediumAlsZipBytesOderNull(record.skizze, dateiname);
+        if (bytes) {
+            zip.file(dateiname, bytes);
+            manifest?.push({ pfad: dateiname, typ: 'skizze', schacht_id: record.id ?? null });
+            exportierteDateien++;
+        }
+    }
+
+    return exportierteDateien;
 }
 
 async function exportAlleJSON(records = null) {
@@ -2261,25 +2314,17 @@ async function exportAlleJSON(records = null) {
             return;
         }
         if (!await App.aenderungenSpeichern()) return;
-        const exportRecords = records ?? await schachtExportRecordsErmitteln();
-        if (!exportRecords?.length) return;
-        const alle = [...exportRecords];
+        const alle = await exportRecordsAufloesen(records);
+        if (!alle) return;
+        medienGroesenlimitPruefen(alle, 1.4);
         const payload = await jsonPayloadErstellen(alle);
         downloadFile(JSON.stringify(payload, null, 2), 'application/json', `schachtprotokoll_alle_${dateiDatum()}.json`);
         backupZeitMerken('vollstaendig');
-        App.toast(`${alle.length} Schächte als JSON exportiert.`, 'success');
+        App.toast(`${alle.length} Schacht${alle.length !== 1 ? 'e' : ''} als JSON exportiert.`, 'success');
     } catch (e) {
         App.setStatus('JSON-Export fehlgeschlagen');
         App.toast('JSON-Export fehlgeschlagen: ' + e.message, 'error');
     }
-}
-
-function rohdatenMedienBytes(records) {
-    return records.reduce((summe, record) => {
-        const fotos = (record.fotos || []).reduce((teil, foto) => teil + (istBlob(foto) ? foto.size : Math.ceil(String(foto || '').length * 0.75)), 0);
-        const skizze = record.skizze_genutzt ? Math.ceil(String(record.skizze || '').length * 0.75) : 0;
-        return summe + fotos + skizze;
-    }, 0);
 }
 
 async function exportRohdaten(records = null) {
@@ -2289,35 +2334,23 @@ async function exportRohdaten(records = null) {
             return;
         }
         if (!await App.aenderungenSpeichern()) return;
-        const exportRecords = records ?? await schachtExportRecordsErmitteln();
-        if (!exportRecords?.length) return;
-        const alle = [...exportRecords];
+        const alle = await exportRecordsAufloesen(records);
+        if (!alle) return;
         if (!window.SchachtZip?.ZipWriter) throw new Error('ZIP-Writer nicht geladen');
-        const medienBytes = rohdatenMedienBytes(alle);
-        if (medienBytes > EXPORT_MAX_MEDIEN_BYTES) {
-            throw new Error(`Medienumfang ${Math.round(medienBytes / 1024 / 1024)} MB überschreitet die Grenze von ${Math.round(EXPORT_MAX_MEDIEN_BYTES / 1024 / 1024)} MB`);
-        }
+        medienGroesenlimitPruefen(alle);
 
         const zip = new window.SchachtZip.ZipWriter();
+        const manifest = [];
 
         for (let i = 0; i < alle.length; i++) {
             const schacht = alle[i];
             const ordner = schachtOrdner(schacht, i);
             const jsonPfad = `${ordner}/schacht.json`;
-            const jsonPayload = await jsonPayloadErstellen([schacht]);
+            const jsonPayload = await jsonPayloadErstellen([schacht], { medien: false });
             zip.file(jsonPfad, JSON.stringify(jsonPayload, null, 2));
-
-            const fotos = (schacht.fotos || []).filter(Boolean);
-            for (let fotoIndex = 0; fotoIndex < fotos.length; fotoIndex++) {
-                const foto = fotos[fotoIndex];
-                const dateiname = `${ordner}/bilder/foto_${fotoIndex + 1}.${mediumEndung(foto)}`;
-                zip.file(dateiname, await mediumAlsZipBytes(foto));
-            }
-            if (await recordHatSkizze(schacht)) {
-                const dateiname = `${ordner}/bilder/skizze.png`;
-                zip.file(dateiname, await mediumAlsZipBytes(schacht.skizze));
-            }
+            await zipMedienDateienHinzufuegen(zip, schacht, ordner, { bilderUnterordner: 'bilder', manifest });
         }
+        zip.file('manifest.json', JSON.stringify({ erstellt_am: new Date().toISOString(), dateien: manifest }, null, 2));
 
         const blob = await zip.generateAsync({ type: 'blob', mimeType: 'application/zip' });
         downloadBlob(blob, `schachtprotokoll_rohdaten_${dateiDatum()}.zip`);
@@ -2678,7 +2711,6 @@ function aktionAusfuehren(action, element) {
         case 'undo': return Sketch.undo();
         case 'export-json': return exportAlleJSON();
         case 'export-rohdaten': return exportRohdaten();
-        case 'export-bilder': return exportBilderZIP();
         case 'export-alle-pdf': return exportAllePDF();
         case 'import-json': return document.getElementById('importDateiJSON')?.click();
         case 'alle-schachte-loeschen': return alleSchachteLöschen();
@@ -2757,6 +2789,7 @@ function zentraleEventListenerInitialisieren() {
 // ============================================================
 const schachtAuswahl = new Set();
 const schachtSeitenleisteMedia = window.matchMedia('(min-width: 960px)');
+let schachtListeRenderToken = 0;
 
 function schachtIdKey(id) {
     return String(id);
@@ -2768,7 +2801,7 @@ async function aktuellenLeerenEntwurfEntfernen() {
 
     try {
         const schacht = await DB.laden(id);
-        if (!schacht?._leerentwurf) return false;
+        if (!recordIstEntwurf(schacht)) return false;
         await DB.loeschen(id);
         schachtAuswahl.delete(schachtIdKey(id));
         App.datensatzWechseln();
@@ -2783,7 +2816,7 @@ async function leereEntwuerfeBereinigen() {
     if (!App.state.storageAvailable) return;
 
     try {
-        const leereEntwuerfe = (await DB.alle()).filter(schacht => schacht._leerentwurf);
+        const leereEntwuerfe = (await DB.alle()).filter(recordIstEntwurf);
         if (!leereEntwuerfe.length) return;
         await Promise.all(leereEntwuerfe.map(schacht => DB.loeschen(schacht.id)));
         leereEntwuerfe.forEach(schacht => schachtAuswahl.delete(schachtIdKey(schacht.id)));
@@ -2831,7 +2864,7 @@ function schachtAuswahlStatusAktualisieren() {
         const checkbox = zeile.querySelector('input[type="checkbox"]');
         if (checkbox) checkbox.checked = ausgewaehlt;
     });
-    const sichtbareZeilen = schachtSichtbareZeilen();
+    const sichtbareZeilen = alleZeilen.filter(zeile => !zeile.hidden);
     const sichtbareAuswahl = sichtbareZeilen.filter(zeile => schachtAuswahl.has(zeile.dataset.schachtId)).length;
     const alleSichtbar = document.getElementById('schachtAlleSichtbar');
     if (alleSichtbar) {
@@ -2874,12 +2907,16 @@ function schachtAuswahlLoeschen() {
     schachtAuswahlStatusAktualisieren();
 }
 
-async function schachtExportRecordsErmitteln() {
-    const alle = await DB.alle();
+function schachtAuswahlBereinigen(alle) {
     const vorhandeneIds = new Set(alle.map(schacht => schachtIdKey(schacht.id)));
     schachtAuswahl.forEach(id => {
         if (!vorhandeneIds.has(id)) schachtAuswahl.delete(id);
     });
+}
+
+async function schachtExportRecordsErmitteln() {
+    const alle = await DB.alle();
+    schachtAuswahlBereinigen(alle);
 
     const ausgewaehlte = alle.filter(schacht => schachtAuswahl.has(schachtIdKey(schacht.id)));
     const exportRecords = ausgewaehlte.length
@@ -2894,11 +2931,17 @@ async function schachtExportRecordsErmitteln() {
     return exportRecords;
 }
 
-function schachtListenAnsichtAktualisieren() {
+function schachtListePanelElemente() {
     const panel = document.getElementById('schachtListe');
     const overlay = document.getElementById('panelOverlay');
-    const oeffnen = document.querySelector('[data-action="schachtliste-oeffnen"]');
-    if (!panel || !overlay) return;
+    if (!panel || !overlay) return null;
+    return { panel, overlay, oeffnen: document.querySelector('[data-action="schachtliste-oeffnen"]') };
+}
+
+function schachtListenAnsichtAktualisieren() {
+    const elemente = schachtListePanelElemente();
+    if (!elemente) return;
+    const { panel, overlay, oeffnen } = elemente;
     if (schachtSeitenleisteAktiv()) {
         panel.classList.remove('offen');
         panel.removeAttribute('role');
@@ -2913,10 +2956,9 @@ function schachtListenAnsichtAktualisieren() {
 }
 
 function schachtListeOeffnen() {
-    const panel = document.getElementById('schachtListe');
-    const overlay = document.getElementById('panelOverlay');
-    const oeffnen = document.querySelector('[data-action="schachtliste-oeffnen"]');
-    if (!panel || !overlay) return;
+    const elemente = schachtListePanelElemente();
+    if (!elemente) return;
+    const { panel, overlay, oeffnen } = elemente;
     if (!schachtSeitenleisteAktiv()) {
         panel._rueckkehrFokus = document.activeElement;
         panel.classList.add('offen');
@@ -2947,10 +2989,9 @@ function schachtListeFiltern() {
 
 function schachtListeSchliessen() {
     if (schachtSeitenleisteAktiv()) return;
-    const panel = document.getElementById('schachtListe');
-    const overlay = document.getElementById('panelOverlay');
-    const oeffnen = document.querySelector('[data-action="schachtliste-oeffnen"]');
-    if (!panel || !overlay) return;
+    const elemente = schachtListePanelElemente();
+    if (!elemente) return;
+    const { panel, overlay, oeffnen } = elemente;
     panel.classList.remove('offen');
     overlay.style.display = 'none';
     if (oeffnen) oeffnen.setAttribute('aria-expanded', 'false');
@@ -2959,16 +3000,127 @@ function schachtListeSchliessen() {
     requestAnimationFrame(() => rueckkehr?.focus?.());
 }
 
+function schachtListenZeileErstellen(schacht) {
+    const tr = document.createElement('tr');
+    const typText = schachtTypText(schacht);
+    const bezeichnung = schacht.nummer ? `Schacht ${schacht.nummer}` : 'Schacht ohne Nummer';
+    const istAktuell = App.state.currentSchachtId === schacht.id;
+    const istAusgewaehlt = schachtAuswahl.has(schachtIdKey(schacht.id));
+    tr.dataset.schachtId = schachtIdKey(schacht.id);
+    tr.dataset.suchtext = schachtSuchtextFuer(schacht);
+    tr.dataset.geaendertAm = schacht.geaendert_am || '';
+    tr.classList.toggle('schacht-liste-aktuell', istAktuell);
+    tr.classList.toggle('schacht-liste-ausgewaehlt', istAusgewaehlt);
+
+    const auswahlCell = tr.insertCell(-1);
+    auswahlCell.className = 'schacht-auswahl-zelle';
+    auswahlCell.dataset.label = 'Auswahl';
+    const auswahlLabel = document.createElement('label');
+    auswahlLabel.className = 'schacht-auswahl-label';
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.checked = istAusgewaehlt;
+    checkbox.setAttribute('aria-label', `${bezeichnung} für Export auswählen`);
+    checkbox.addEventListener('change', () => schachtAuswahlAendern(schacht.id, checkbox.checked));
+    auswahlLabel.appendChild(checkbox);
+    auswahlCell.appendChild(auswahlLabel);
+
+    const schachtCell = tr.insertCell(-1);
+    schachtCell.dataset.label = 'Schacht';
+    const titel = document.createElement('strong');
+    titel.textContent = bezeichnung;
+    const ort = [schacht.gemeinde, schacht.strasse].filter(Boolean).join(', ');
+    schachtCell.appendChild(titel);
+    if (istAktuell) {
+        const aktuell = document.createElement('span');
+        aktuell.className = 'schacht-aktuell-marker';
+        aktuell.textContent = 'Aktuell';
+        schachtCell.appendChild(aktuell);
+    }
+    if (ort) {
+        const meta = document.createElement('small');
+        meta.textContent = ort;
+        schachtCell.appendChild(meta);
+    }
+
+    const typCell = tr.insertCell(-1);
+    typCell.className = 'schacht-meta schacht-meta--typ';
+    typCell.textContent = typText;
+    typCell.dataset.label = 'Typ';
+    typCell.classList.toggle('schacht-meta--leer', !typText);
+
+    const datumCell = tr.insertCell(-1);
+    const datumText = datumFuerAnzeige(schacht.aufnahmedatum) || schacht.datum || '';
+    datumCell.className = 'schacht-meta schacht-meta--datum';
+    datumCell.textContent = datumText;
+    datumCell.dataset.label = 'Aufnahmedatum';
+    datumCell.classList.toggle('schacht-meta--leer', !datumText);
+    tr.classList.toggle('schacht-ohne-typ', !typText);
+
+    const aktCell = tr.insertCell(-1);
+    aktCell.className = 'schacht-aktionszelle';
+    aktCell.dataset.label = 'Aktion';
+    const btnLaden = document.createElement('button');
+    btnLaden.type = 'button';
+    btnLaden.className = 'btn-laden';
+    btnLaden.textContent = 'Laden';
+    btnLaden.addEventListener('click', () => schachtLaden(schacht.id));
+    const btnDel = document.createElement('button');
+    btnDel.type = 'button';
+    btnDel.className = 'btn-loeschen btn-schacht-loeschen';
+    btnDel.textContent = 'Löschen';
+    btnDel.title = 'Schacht löschen';
+    btnDel.setAttribute('aria-label', 'Schacht löschen');
+    btnDel.addEventListener('click', () => schachtLoeschenAusListe(schacht.id));
+    aktCell.append(btnLaden, btnDel);
+    return tr;
+}
+
+function schachtListeZeilenSortieren(tbody) {
+    const zeilen = Array.from(tbody.querySelectorAll('tr[data-schacht-id]'));
+    zeilen
+        .sort((a, b) => (b.dataset.geaendertAm || '').localeCompare(a.dataset.geaendertAm || ''))
+        .forEach(zeile => tbody.appendChild(zeile));
+}
+
+async function schachtListeRecordAktualisieren(id) {
+    const tbody = document.querySelector('#schachtListeTabelle tbody');
+    if (!tbody || !id) return schachtListeAktualisieren();
+    const renderToken = ++schachtListeRenderToken;
+    try {
+        const schacht = await DB.laden(id);
+        if (renderToken !== schachtListeRenderToken) return;
+        if (!schacht) {
+            await schachtListeAktualisieren();
+            return;
+        }
+        const key = schachtIdKey(id);
+        const neueZeile = schachtListenZeileErstellen(schacht);
+        const leereZeile = tbody.querySelector('.liste-leer')?.closest('tr');
+        const alteZeile = Array.from(tbody.querySelectorAll('tr[data-schacht-id]'))
+            .find(zeile => zeile.dataset.schachtId === key);
+        if (alteZeile) {
+            alteZeile.replaceWith(neueZeile);
+        } else {
+            if (leereZeile) leereZeile.remove();
+            tbody.appendChild(neueZeile);
+        }
+        schachtListeZeilenSortieren(tbody);
+        schachtListeFiltern();
+    } catch (e) {
+        console.error('[DB] Listenzeile Fehler:', e);
+        schachtListeAktualisieren();
+    }
+}
+
 async function schachtListeAktualisieren() {
     const tbody = document.querySelector('#schachtListeTabelle tbody');
     if (!tbody) return;
-    tbody.innerHTML = '';
+    const renderToken = ++schachtListeRenderToken;
     try {
         const alle = await DB.alle();
-        const vorhandeneIds = new Set(alle.map(schacht => schachtIdKey(schacht.id)));
-        schachtAuswahl.forEach(id => {
-            if (!vorhandeneIds.has(id)) schachtAuswahl.delete(id);
-        });
+        if (renderToken !== schachtListeRenderToken) return;
+        schachtAuswahlBereinigen(alle);
         if (alle.length === 0) {
             tbody.innerHTML = '<tr><td colspan="5" class="liste-leer">Keine gespeicherten Schächte</td></tr>';
             const anzahl = document.getElementById('schachtAnzahl');
@@ -2977,78 +3129,12 @@ async function schachtListeAktualisieren() {
             return;
         }
         alle.sort((a, b) => (b.geaendert_am || '').localeCompare(a.geaendert_am || ''));
+        const fragment = document.createDocumentFragment();
         alle.forEach(schacht => {
-            const tr = document.createElement('tr');
-            const typText = schachtTypText(schacht);
-            const bezeichnung = schacht.nummer ? `Schacht ${schacht.nummer}` : 'Schacht ohne Nummer';
-            tr.dataset.schachtId = schachtIdKey(schacht.id);
-            tr.dataset.suchtext = schachtSuchtextFuer(schacht);
-            tr.classList.toggle('schacht-liste-aktuell', App.state.currentSchachtId === schacht.id);
-            tr.classList.toggle('schacht-liste-ausgewaehlt', schachtAuswahl.has(schachtIdKey(schacht.id)));
-
-            const auswahlCell = tr.insertCell(-1);
-            auswahlCell.className = 'schacht-auswahl-zelle';
-            auswahlCell.dataset.label = 'Auswahl';
-            const auswahlLabel = document.createElement('label');
-            auswahlLabel.className = 'schacht-auswahl-label';
-            const checkbox = document.createElement('input');
-            checkbox.type = 'checkbox';
-            checkbox.checked = schachtAuswahl.has(schachtIdKey(schacht.id));
-            checkbox.setAttribute('aria-label', `${bezeichnung} für Export auswählen`);
-            checkbox.addEventListener('change', () => schachtAuswahlAendern(schacht.id, checkbox.checked));
-            auswahlLabel.appendChild(checkbox);
-            auswahlCell.appendChild(auswahlLabel);
-
-            const schachtCell = tr.insertCell(-1);
-            schachtCell.dataset.label = 'Schacht';
-            const titel = document.createElement('strong');
-            titel.textContent = bezeichnung;
-            const ort = [schacht.gemeinde, schacht.strasse].filter(Boolean).join(', ');
-            schachtCell.appendChild(titel);
-            if (App.state.currentSchachtId === schacht.id) {
-                const aktuell = document.createElement('span');
-                aktuell.className = 'schacht-aktuell-marker';
-                aktuell.textContent = 'Aktuell';
-                schachtCell.appendChild(aktuell);
-            }
-            if (ort) {
-                const meta = document.createElement('small');
-                meta.textContent = ort;
-                schachtCell.appendChild(meta);
-            }
-
-            const typCell = tr.insertCell(-1);
-            typCell.className = 'schacht-meta schacht-meta--typ';
-            typCell.textContent = typText;
-            typCell.dataset.label = 'Typ';
-            typCell.hidden = !typText;
-
-            const datumCell = tr.insertCell(-1);
-            const datumText = datumFuerAnzeige(schacht.aufnahmedatum) || schacht.datum || '';
-            datumCell.className = 'schacht-meta schacht-meta--datum';
-            datumCell.textContent = datumText;
-            datumCell.dataset.label = 'Aufnahmedatum';
-            datumCell.hidden = !datumText;
-            tr.classList.toggle('schacht-ohne-typ', !typText);
-
-            const aktCell = tr.insertCell(-1);
-            aktCell.className = 'schacht-aktionszelle';
-            aktCell.dataset.label = 'Aktion';
-            const btnLaden = document.createElement('button');
-            btnLaden.type = 'button';
-            btnLaden.className = 'btn-laden';
-            btnLaden.textContent = 'Laden';
-            btnLaden.addEventListener('click', () => schachtLaden(schacht.id));
-            const btnDel = document.createElement('button');
-            btnDel.type = 'button';
-            btnDel.className = 'btn-loeschen btn-schacht-loeschen';
-            btnDel.textContent = 'Löschen';
-            btnDel.title = 'Schacht löschen';
-            btnDel.setAttribute('aria-label', 'Schacht löschen');
-            btnDel.addEventListener('click', () => schachtLoeschenAusListe(schacht.id));
-            aktCell.append(btnLaden, btnDel);
-            tbody.appendChild(tr);
+            fragment.appendChild(schachtListenZeileErstellen(schacht));
         });
+        if (renderToken !== schachtListeRenderToken) return;
+        tbody.replaceChildren(fragment);
         schachtListeFiltern();
     } catch (e) {
         console.error('[DB] Liste Fehler:', e);
@@ -3156,7 +3242,6 @@ if (schachtSeitenleisteMedia.addEventListener) {
 }
 serviceWorkerRegistrieren();
 speicherInitialisieren();
-schachtListeAktualisieren();
 kopfzeile();
 updateAuftrag();
 selectPlaceholderInit();
