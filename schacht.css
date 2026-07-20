@@ -2243,9 +2243,101 @@ dialog.dialog-fallback-offen {
 }
 
 /* ── Responsive ── */
-@media (max-width: 1023px) and (min-width: 768px) {
+@media (max-width: 1305px) and (min-width: 768px) {
     .fotos-container {
         min-height: 220px;
+    }
+
+    /* Touch-Zielgrössen: Tablets sind i.d.R. touch-primär */
+    .nav-aktionen button,
+    menu label,
+    .grundriss button,
+    .panel-daten-gruppe button,
+    .btn-laden,
+    .btn-loeschen,
+    .foto-loeschen,
+    input[type="text"],
+    input[type="date"],
+    select,
+    textarea {
+        min-height: 44px;
+    }
+
+    dialog {
+        width: min(85vw, 640px);
+    }
+
+    /* Leitungen: kompakte Card-Ansicht statt erzwungenem horizontalem Scrollen */
+    .tabelle-scroll {
+        overflow-x: visible;
+    }
+
+    #tblleitungen,
+    #tblleitungen tbody,
+    #tblleitungen tr,
+    #tblleitungen td {
+        min-width: 0;
+    }
+
+    #tblleitungen {
+        display: block;
+        width: 100%;
+    }
+
+    #tblleitungen tbody {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+        gap: 0.6rem;
+    }
+
+    #tblleitungen thead {
+        display: none;
+    }
+
+    #tblleitungen tr {
+        display: block;
+        border: 1px solid var(--farberahmen);
+        border-radius: var(--radius-lg);
+        background: var(--flaeche);
+        overflow: hidden;
+    }
+
+    #tblleitungen td {
+        display: grid;
+        grid-template-columns: minmax(92px, 34%) 1fr;
+        gap: 0.5rem;
+        text-align: left;
+        align-items: center;
+        min-height: 42px;
+        padding: 0.35rem 0.6rem;
+        border-bottom: 1px solid var(--linie-subtil);
+        word-break: break-word;
+        overflow-wrap: anywhere;
+    }
+
+    #tblleitungen td::before {
+        content: attr(data-label);
+        color: var(--text-muted);
+        font-weight: 700;
+        font-size: 0.76rem;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+    }
+
+    #tblleitungen td:last-child {
+        border-bottom: none;
+    }
+
+    #tblleitungen td:nth-last-child(-n+2) {
+        display: inline-flex;
+        width: auto;
+        min-height: 44px;
+        border-bottom: none;
+        padding-right: 0.2rem;
+    }
+
+    #tblleitungen td:nth-last-child(-n+2)::before {
+        display: none;
     }
 }
 
