@@ -198,6 +198,16 @@ const DB = (() => {
 // ============================================================
 // App – Zentraler Zustand
 // ============================================================
+const _appElCache = new Map();
+function appEl(id) {
+    let el = _appElCache.get(id);
+    if (el === undefined) {
+        el = document.getElementById(id);
+        _appElCache.set(id, el);
+    }
+    return el;
+}
+
 const App = {
     state: {
         currentSchachtId: null,
@@ -213,7 +223,7 @@ const App = {
     _saveChain: Promise.resolve(),
 
     toast(msg, typ = 'info') {
-        const t = document.getElementById('toast');
+        const t = appEl('toast');
         if (!t) return;
         t.textContent = msg;
         t.className = `toast toast--${typ} toast--sichtbar`;
@@ -222,14 +232,14 @@ const App = {
     },
 
     setStatus(msg) {
-        const el = document.getElementById('statusbar-text');
+        const el = appEl('statusbar-text');
         if (el) el.textContent = msg;
     },
 
     setStorageStatus(status, msg) {
         App.state.storageStatus = status;
         App.state.storageAvailable = status === 'active' || status === 'warning';
-        const statusEl = document.getElementById('speicherstatus');
+        const statusEl = appEl('speicherstatus');
         if (statusEl) {
             const kurztext = {
                 checking: 'Speicherprüfung',
@@ -240,7 +250,7 @@ const App = {
             statusEl.textContent = kurztext[status] || msg;
             statusEl.className = `speicherstatus speicherstatus--${status}`;
         }
-        const banner = document.getElementById('offline-banner');
+        const banner = appEl('offline-banner');
         if (banner) {
             banner.textContent = msg;
             banner.style.display = status === 'active' ? 'none' : 'block';
@@ -257,14 +267,14 @@ const App = {
     },
 
     speicherfehlerAnzeigen(msg) {
-        const banner = document.getElementById('speicherfehler-banner');
-        const textEl = document.getElementById('speicherfehler-text');
+        const banner = appEl('speicherfehler-banner');
+        const textEl = appEl('speicherfehler-text');
         if (textEl) textEl.textContent = msg;
         if (banner) banner.hidden = false;
     },
 
     speicherfehlerAusblenden() {
-        const banner = document.getElementById('speicherfehler-banner');
+        const banner = appEl('speicherfehler-banner');
         if (banner) banner.hidden = true;
     },
 
@@ -361,7 +371,7 @@ async function speicherInitialisieren() {
         if (navigator.storage?.persist) {
             try {
                 App.state.storagePersistent = await navigator.storage.persist();
-                const statusEl = document.getElementById('speicherstatus');
+                const statusEl = appEl('speicherstatus');
                 if (statusEl) statusEl.title = App.state.storagePersistent
                     ? 'Browser-Speicher ist dauerhaft angefordert.'
                     : 'Browser kann lokale Daten bei Speicherdruck entfernen. JSON-Backups erstellen.';
