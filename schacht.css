@@ -33,7 +33,6 @@
     --farbemenu-text: #f0f2f5;
     --farbehover: #4a9eff;
     --farberahmen: #c8cdd4;
-    --farbedialog: #ffffff;
     --farbehintergrund: #f5f7fa;
     --farbefont: #1a1d23;
     --farbeakzent: #1a6fcf;
@@ -593,7 +592,7 @@ canvas {
 
 /* ── Dialog ── */
 dialog {
-    background-color: var(--farbedialog);
+    background-color: var(--flaeche);
     border: 1px solid var(--farberahmen);
     border-radius: var(--radius-xl);
     box-shadow: var(--schatten-dialog);
@@ -1416,13 +1415,13 @@ dialog.dialog-fallback-offen {
     padding: 0.12rem 0.55rem;
     font-size: 0.73rem;
     font-weight: 700;
-    color: #dbeafe;
+    color: var(--flaeche-akzent-stark);
     background: rgba(255, 255, 255, 0.08);
     white-space: nowrap;
 }
 
 .speicherstatus--checking {
-    color: #dbeafe;
+    color: var(--flaeche-akzent-stark);
     border-color: rgba(219, 234, 254, 0.35);
 }
 

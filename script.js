@@ -42,7 +42,7 @@ function recordIstEntwurf(record) {
 
 function recordStatusSetzen(record, status = RECORD_STATUS.SAVED) {
     const daten = record || {};
-    daten.status = recordStatusNormalisieren({ status }, RECORD_STATUS.SAVED);
+    daten.status = status === RECORD_STATUS.DRAFT ? RECORD_STATUS.DRAFT : RECORD_STATUS.SAVED;
     delete daten._leerentwurf;
     return daten;
 }
@@ -311,7 +311,7 @@ const App = {
     },
 
     datensatzAlsGespeichertMarkieren(id) {
-        App.state.currentSchachtId = id;
+        App.setCurrentSchachtId(id);
         App.state.dirty = false;
     },
 
@@ -1017,6 +1017,7 @@ function zustandsOptionenText(zustandsliste, gruppeKey) {
 
 function istBlob(value) {
     if (window.SchachtZip?.isBlob) return window.SchachtZip.isBlob(value);
+    // Fallback falls zip-writer.js (noch) nicht geladen ist - Logik synchron zu SchachtZip.isBlob halten (assets/vendor/zip-writer.js)
     return Boolean(value && typeof value === 'object' &&
         ((typeof Blob !== 'undefined' && value instanceof Blob) || Object.prototype.toString.call(value) === '[object Blob]') &&
         typeof value.arrayBuffer === 'function' && typeof value.size === 'number');
@@ -1089,19 +1090,15 @@ async function fotosAlsDataUrls(fotos) {
 
 async function recordFuerExport(record, optionen = {}) {
     const { medien = true } = optionen;
-    const exportRecord = { ...record };
-    delete exportRecord._leerentwurf;
-    delete exportRecord.status;
+    const { _leerentwurf, status, ...exportRecord } = record || {};
     if (!medien) {
         exportRecord.fotos = [];
         exportRecord.skizze = '';
         exportRecord.skizze_basis = '';
         return exportRecord;
     }
-    return {
-        ...exportRecord,
-        fotos: await fotosAlsDataUrls(record?.fotos)
-    };
+    exportRecord.fotos = await fotosAlsDataUrls(record?.fotos);
+    return exportRecord;
 }
 
 function importServerFelderEntfernen(s) {
@@ -2342,9 +2339,8 @@ function medienGroesenlimitPruefen(records, faktor = 1) {
     }
 }
 
-async function zipMedienDateienHinzufuegen(zip, record, ordner, optionen = {}) {
-    const { bilderUnterordner = '', manifest = null } = optionen;
-    const prefix = bilderUnterordner ? `${ordner}/${bilderUnterordner}` : ordner;
+async function zipMedienDateienHinzufuegen(zip, record, ordner, manifest) {
+    const prefix = `${ordner}/bilder`;
     const fotos = (record.fotos || []).filter(Boolean);
     let exportierteDateien = 0;
 
@@ -2354,7 +2350,7 @@ async function zipMedienDateienHinzufuegen(zip, record, ordner, optionen = {}) {
         const bytes = await mediumAlsZipBytesOderNull(foto, dateiname);
         if (!bytes) continue;
         zip.file(dateiname, bytes);
-        manifest?.push({ pfad: dateiname, typ: 'foto', schacht_id: record.id ?? null, index: fotoIndex + 1 });
+        manifest.push({ pfad: dateiname, typ: 'foto', schacht_id: record.id ?? null, index: fotoIndex + 1 });
         exportierteDateien++;
     }
 
@@ -2363,7 +2359,7 @@ async function zipMedienDateienHinzufuegen(zip, record, ordner, optionen = {}) {
         const bytes = await mediumAlsZipBytesOderNull(record.skizze, dateiname);
         if (bytes) {
             zip.file(dateiname, bytes);
-            manifest?.push({ pfad: dateiname, typ: 'skizze', schacht_id: record.id ?? null });
+            manifest.push({ pfad: dateiname, typ: 'skizze', schacht_id: record.id ?? null });
             exportierteDateien++;
         }
     }
@@ -2402,7 +2398,7 @@ async function exportRohdaten(records = null) {
             const jsonPfad = `${ordner}/schacht.json`;
             const jsonPayload = await jsonPayloadErstellen([schacht], { medien: false });
             zip.file(jsonPfad, JSON.stringify(jsonPayload, null, 2));
-            await zipMedienDateienHinzufuegen(zip, schacht, ordner, { bilderUnterordner: 'bilder', manifest });
+            await zipMedienDateienHinzufuegen(zip, schacht, ordner, manifest);
         }
         zip.file('manifest.json', JSON.stringify({ erstellt_am: new Date().toISOString(), dateien: manifest }, null, 2));
 
@@ -3158,13 +3154,6 @@ function schachtListenZeileErstellen(schacht) {
     return tr;
 }
 
-function schachtListeZeilenSortieren(tbody) {
-    const zeilen = Array.from(tbody.querySelectorAll('tr[data-schacht-id]'));
-    zeilen
-        .sort((a, b) => (b.dataset.geaendertAm || '').localeCompare(a.dataset.geaendertAm || ''))
-        .forEach(zeile => tbody.appendChild(zeile));
-}
-
 async function schachtListeRecordAktualisieren(id) {
     const tbody = document.querySelector('#schachtListeTabelle tbody');
     if (!tbody || !id) return schachtListeAktualisieren();
@@ -3178,16 +3167,14 @@ async function schachtListeRecordAktualisieren(id) {
         }
         const key = schachtIdKey(id);
         const neueZeile = schachtListenZeileErstellen(schacht);
-        const leereZeile = tbody.querySelector('.liste-leer')?.closest('tr');
-        const alteZeile = Array.from(tbody.querySelectorAll('tr[data-schacht-id]'))
-            .find(zeile => zeile.dataset.schachtId === key);
+        const alteZeile = tbody.querySelector(`tr[data-schacht-id="${key}"]`);
         if (alteZeile) {
-            alteZeile.replaceWith(neueZeile);
+            alteZeile.remove();
         } else {
-            if (leereZeile) leereZeile.remove();
-            tbody.appendChild(neueZeile);
+            tbody.querySelector('.liste-leer')?.closest('tr')?.remove();
         }
-        schachtListeZeilenSortieren(tbody);
+        // Frisch gespeicherter Datensatz hat den neuesten Zeitstempel - direkt oben einfuegen statt komplett neu zu sortieren
+        tbody.insertBefore(neueZeile, tbody.firstChild);
         schachtListeFiltern();
     } catch (e) {
         console.error('[DB] Listenzeile Fehler:', e);
