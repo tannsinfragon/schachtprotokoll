@@ -51,26 +51,19 @@ Ab ca. Z.1640 bis Z.3259 folgen ~90 freistehende Funktionen ohne Modul-Wrapper: 
 
 1. **Versionsnummer an drei Stellen synchron halten:** `assets/js/app-config.js` (`version`), Fallback in `script.js`, und `CACHE_NAME`/`?v=`-Query-Strings in `serviceworker.js`. Aktuell: `2.8.9` in `app-config.js`/`serviceworker.js` — README nennt noch `2.8.1` (Doku-Drift, beim nächsten Versionswechsel mit korrigieren).
 2. **Service-Worker-Cache-Liste ist manuell gepflegt** (`CORE_ASSETS`/`OPTIONAL_ASSETS` in `serviceworker.js`). Bei jeder Änderung an gecachten Dateien: `CACHE_NAME` erhöhen, sonst laden installierte PWA-Instanzen alte Versionen aus dem Cache.
-3. **`assets/vendor/sqlite-wasm/`** ist ein leerer, nicht von git getrackter Verzeichnisbaum ohne jede Code-Referenz — nicht als aktive Abhängigkeit missverstehen, ist reine Altlast.
+3. **`!important` in `schacht.css`:** fast alle verbleibenden Vorkommen sind entweder Print-Layout-Overrides (`@media print`) oder überschreiben absichtlich hoch-spezifische ID-Selektoren bzw. von JS gesetzte Inline-Styles (z. B. `.panel-overlay`, `.btn-gefahr`) — vor dem Entfernen eines `!important` die Selektor-Spezifität und etwaige Inline-Style-Zuweisungen im zugehörigen Code prüfen.
+4. **`App.state`-Schreibzugriffe:** ausserhalb des `App`-Objekts nur über die Setter (`App.setCurrentSchachtId`, `App.datensatzAlsGespeichertMarkieren`, `App.leitungsnummerZuruecksetzen`, `App.leitungsnummerSicherstellen`) schreiben, nicht direkt auf `App.state.*` zugreifen. Innerhalb der `App`-Methoden selbst ist direkter Zugriff weiterhin normal.
 
 ## Konventionen
 
 - Bezeichner sind überwiegend deutsche Domänenbegriffe (`recordStatusNormalisieren`, `schachtListeAktualisieren`), vereinzelt englische Utility-Namen (`downloadFile`, `downloadBlob`) — historisch gewachsen, kein pauschaler Umbenennungsbedarf.
-- Toast-Feedback-Typ ist uneinheitlich: überwiegend `'fehler'`, an einigen Stellen `'error'` (CSS aliast beides in `schacht.css`) — bei neuem Code `'fehler'` verwenden.
+- Toast-Feedback-Typ ist einheitlich `'fehler'` (nicht `'error'`) — so in `App.toast(msg, typ)` verwenden.
+- DOM-Lookups für die statischen App-weiten Elemente (`#toast`, `#statusbar-text`, `#speicherstatus`, Banner) laufen über `appEl(id)` (Cache), nicht direkt über `document.getElementById` — gilt nur für diese festen, nie ersetzten Elemente.
 - Bevorzugt kleine, einzeln überprüfbare Commits statt grosser Rewrites — insbesondere bei Aufräum-/Vereinfachungsarbeiten.
 
-## Bekanntes Aufräum-Backlog
+## Aufräum-Status
 
-Nicht dringend, aber als nächste Schritte vorgemerkt (siehe Plan-Historie für Details):
-- Mojibake-String `Ã¼bersprungen` statt `übersprungen` (script.js, `mediumAlsZipBytesOderNull`)
-- Duplizierte Guard-Präambel in `exportAlleJSON`/`exportRohdaten`
-- Magic Numbers (Timeouts, Foto-/Zeichen-Schwellwerte) als benannte Konstanten, wo sinnvoll in `app-config.js`
-- Häufige `document.getElementById`-Aufrufe in heissen Pfaden (Autosave, Toast) bündeln
-- `App.state`-Schreibzugriffe hinter klare Accessor-Funktionen legen
-- `!important`-Nutzung in `schacht.css` auditieren
-- Längste Funktionen (`schachtListenZeileErstellen`, `zentraleEventListenerInitialisieren`, `importRecordNormalisieren`) in kleinere Teile zerlegen
-
-Entscheidung: script.js bleibt eine Datei (keine ES-Module-Aufteilung), keine automatisierten Tests werden ergänzt.
+Die im Juli 2026 identifizierten Cleanup-Punkte (tote Dateien, Magic Numbers, Toast-Typ, Export-Duplikat, DOM-Caching, `!important`-Audit, `App.state`-Accessors, lange Funktionen aufteilen) sind umgesetzt. script.js bleibt eine Datei (keine ES-Module-Aufteilung), es wurden keine automatisierten Tests ergänzt — Verifikation erfolgt manuell bzw. projektintern per Playwright-Smoke-Test während der Entwicklung.
 
 ## Lokal ausführen & verifizieren
 
