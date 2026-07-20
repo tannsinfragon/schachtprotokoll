@@ -25,5 +25,14 @@ window.AppConfig = Object.freeze({
         quotaWarnRatio: 0.85,
         backupReminderDays: 30,
         maxExportMediaBytes: 250 * 1024 * 1024
+    }),
+    print: Object.freeze({
+        bildWartenTimeoutMs: 20000,
+        bildWartenTimeoutMsSammel: 30000,
+        cleanupTimeoutMs: 60000,
+        fotoWarnschwelle: 100
+    }),
+    export: Object.freeze({
+        dateinameMaxZeichen: 80
     })
 });

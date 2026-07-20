@@ -1464,8 +1464,7 @@ dialog.dialog-fallback-offen {
     transform: translateY(0);
 }
 
-.toast--fehler,
-.toast--error  { background-color: var(--farbefehler); }
+.toast--fehler { background-color: var(--farbefehler); }
 .toast--info   { background-color: var(--farbeakzent); }
 .toast--success { background-color: var(--farbeerfolg); }
 .toast--warn   { background-color: var(--farbewarnung); }

@@ -19,6 +19,11 @@ const IMPORT_MAX_LEITUNGEN = window.AppConfig?.import?.maxLeitungenPerRecord || 
 const IMPORT_MAX_STRICHE = window.AppConfig?.import?.maxStrokesPerRecord || 1000;
 const BACKUP_ERINNERUNG_TAGE = window.AppConfig?.storage?.backupReminderDays || 30;
 const EXPORT_MAX_MEDIEN_BYTES = window.AppConfig?.storage?.maxExportMediaBytes || 250 * 1024 * 1024;
+const PRINT_BILD_TIMEOUT_MS = window.AppConfig?.print?.bildWartenTimeoutMs || 20000;
+const PRINT_BILD_TIMEOUT_MS_SAMMEL = window.AppConfig?.print?.bildWartenTimeoutMsSammel || 30000;
+const PRINT_CLEANUP_TIMEOUT_MS = window.AppConfig?.print?.cleanupTimeoutMs || 60000;
+const PRINT_FOTO_WARNSCHWELLE = window.AppConfig?.print?.fotoWarnschwelle || 100;
+const EXPORT_DATEINAME_MAX_ZEICHEN = window.AppConfig?.export?.dateinameMaxZeichen || 80;
 const RECORD_STATUS = Object.freeze({
     DRAFT: 'draft',
     SAVED: 'saved'
@@ -2005,7 +2010,7 @@ function printSummaryEntfernen() {
     document.body.classList.remove('print-summary-active');
 }
 
-async function warteAufDruckbilder(root, timeoutMs = 20000) {
+async function warteAufDruckbilder(root, timeoutMs = PRINT_BILD_TIMEOUT_MS) {
     const bilder = Array.from(root?.querySelectorAll('img') || []);
     const laden = bilder.map(img => {
         if (img.complete) return Promise.resolve(img.naturalWidth > 0);
@@ -2068,12 +2073,21 @@ async function printpdf() {
         el.type = 'date';
         el.value = datumTeile.length === 3 ? `${datumTeile[2]}-${datumTeile[1]}-${datumTeile[0]}` : '';
     });
-    setTimeout(cleanup, 60000);
+    setTimeout(cleanup, PRINT_CLEANUP_TIMEOUT_MS);
 }
 
 async function exportRecordsAufloesen(records) {
     const exportRecords = records ?? await schachtExportRecordsErmitteln();
     return exportRecords?.length ? [...exportRecords] : null;
+}
+
+async function exportRecordsVorbereiten(records) {
+    if (App.state.dirty && !App.state.storageAvailable) {
+        await aktuellenEntwurfSichern();
+        return null;
+    }
+    if (!await App.aenderungenSpeichern()) return null;
+    return exportRecordsAufloesen(records);
 }
 
 async function exportAllePDF(records = null) {
@@ -2084,13 +2098,13 @@ async function exportAllePDF(records = null) {
         if (!alle) return;
 
         const fotoAnzahl = alle.reduce((summe, record) => summe + (record.fotos || []).length, 0);
-        if (fotoAnzahl > 100 && !await bestaetigen(`${fotoAnzahl} Fotos können ein sehr grosses PDF erzeugen. Fortfahren?`)) return;
+        if (fotoAnzahl > PRINT_FOTO_WARNSCHWELLE && !await bestaetigen(`${fotoAnzahl} Fotos können ein sehr grosses PDF erzeugen. Fortfahren?`)) return;
 
         alle.sort((a, b) => (b.geaendert_am || '').localeCompare(a.geaendert_am || ''));
         const titleEl = document.querySelector('title');
         const alterTitel = titleEl?.textContent || 'Schachtprotokoll';
         printSummaryAlleErstellen(alle);
-        await warteAufDruckbilder(document.getElementById('printSummary'), 30000);
+        await warteAufDruckbilder(document.getElementById('printSummary'), PRINT_BILD_TIMEOUT_MS_SAMMEL);
 
         let bereinigt = false;
         const cleanup = () => {
@@ -2104,7 +2118,7 @@ async function exportAllePDF(records = null) {
         App.toast(`${alle.length} Schacht${alle.length !== 1 ? 'e' : ''} werden für den PDF-Druck vorbereitet.`, 'info');
         if (titleEl) titleEl.textContent = `Schachtprotokolle_alle_${dateiDatum()}`;
         window.print();
-        setTimeout(cleanup, 60000);
+        setTimeout(cleanup, PRINT_CLEANUP_TIMEOUT_MS);
     } catch (e) {
         printSummaryEntfernen();
         App.toast('PDF-Export fehlgeschlagen: ' + e.message, 'fehler');
@@ -2135,7 +2149,7 @@ function dateinameSicher(value) {
         .replace(/[\u0300-\u036f]/g, '')
         .replace(/[^a-zA-Z0-9._-]+/g, '_')
         .replace(/^_+|_+$/g, '')
-        .slice(0, 80) || 'ohne_angabe';
+        .slice(0, EXPORT_DATEINAME_MAX_ZEICHEN) || 'ohne_angabe';
 }
 
 function mediumMime(medium) {
@@ -2171,7 +2185,7 @@ async function mediumAlsZipBytesOderNull(medium, kontext = 'Medium') {
         const bytes = await mediumAlsZipBytes(medium);
         return bytes?.byteLength ? bytes : null;
     } catch (error) {
-        console.warn(`[Export] ${kontext} Ã¼bersprungen:`, error);
+        console.warn(`[Export] ${kontext} übersprungen:`, error);
         return null;
     }
 }
@@ -2309,12 +2323,7 @@ async function zipMedienDateienHinzufuegen(zip, record, ordner, optionen = {}) {
 
 async function exportAlleJSON(records = null) {
     try {
-        if (App.state.dirty && !App.state.storageAvailable) {
-            await aktuellenEntwurfSichern();
-            return;
-        }
-        if (!await App.aenderungenSpeichern()) return;
-        const alle = await exportRecordsAufloesen(records);
+        const alle = await exportRecordsVorbereiten(records);
         if (!alle) return;
         medienGroesenlimitPruefen(alle, 1.4);
         const payload = await jsonPayloadErstellen(alle);
@@ -2323,18 +2332,13 @@ async function exportAlleJSON(records = null) {
         App.toast(`${alle.length} Schacht${alle.length !== 1 ? 'e' : ''} als JSON exportiert.`, 'success');
     } catch (e) {
         App.setStatus('JSON-Export fehlgeschlagen');
-        App.toast('JSON-Export fehlgeschlagen: ' + e.message, 'error');
+        App.toast('JSON-Export fehlgeschlagen: ' + e.message, 'fehler');
     }
 }
 
 async function exportRohdaten(records = null) {
     try {
-        if (App.state.dirty && !App.state.storageAvailable) {
-            await aktuellenEntwurfSichern();
-            return;
-        }
-        if (!await App.aenderungenSpeichern()) return;
-        const alle = await exportRecordsAufloesen(records);
+        const alle = await exportRecordsVorbereiten(records);
         if (!alle) return;
         if (!window.SchachtZip?.ZipWriter) throw new Error('ZIP-Writer nicht geladen');
         medienGroesenlimitPruefen(alle);
@@ -2357,7 +2361,7 @@ async function exportRohdaten(records = null) {
         App.toast(`${alle.length} Schacht${alle.length !== 1 ? 'e' : ''} als Rohdatenarchiv mit JSON und Originalbildern exportiert.`, 'success');
     } catch (e) {
         App.setStatus('Rohdatenexport fehlgeschlagen');
-        App.toast('Rohdatenexport fehlgeschlagen: ' + e.message, 'error');
+        App.toast('Rohdatenexport fehlgeschlagen: ' + e.message, 'fehler');
     }
 }
 
@@ -2402,7 +2406,7 @@ async function importJSON(input) {
         schachtListeAktualisieren();
     } catch (e) {
         App.setStatus('JSON-Import fehlgeschlagen');
-        App.toast('Import fehlgeschlagen: ' + e.message, 'error');
+        App.toast('Import fehlgeschlagen: ' + e.message, 'fehler');
     }
 }
 
@@ -2423,7 +2427,7 @@ async function alleSchachteLöschen() {
         App.toast(`${alle.length} Schacht${alle.length !== 1 ? 'e' : ''} gelöscht.`, 'success');
         schachtListeAktualisieren();
     } catch (e) {
-        App.toast('Löschen fehlgeschlagen: ' + e.message, 'error');
+        App.toast('Löschen fehlgeschlagen: ' + e.message, 'fehler');
     }
 }
 
