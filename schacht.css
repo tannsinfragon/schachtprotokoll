@@ -495,7 +495,7 @@ menu label[data-stift]:hover {
 
 /* ── Aktiver Zustand ── */
 .aktiv {
-    box-shadow: 0 0 0 2px var(--farbehover) !important;
+    box-shadow: 0 0 0 2px var(--farbehover);
     transform: scale(1.05);
 }
 
@@ -1293,7 +1293,7 @@ dialog.dialog-fallback-offen {
     }
 
     #schachtListeTabelle td.schacht-meta--leer {
-        display: none !important;
+        display: none;
     }
 
     #schachtListeTabelle tr.schacht-ohne-typ td.schacht-meta--datum {
