@@ -1087,28 +1087,33 @@ async function recordFuerExport(record, optionen = {}) {
     };
 }
 
-function importRecordNormalisieren(raw) {
-    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
-        throw new Error('Datensatz ist kein Objekt');
-    }
-    const s = { ...raw };
+function importServerFelderEntfernen(s) {
     delete s.id;
     delete s.erstellt_am;
     delete s.geaendert_am;
     delete s.version;
     delete s._leerentwurf;
     delete s.status;
+}
+
+function importTextfelderPruefen(s) {
     Object.entries(s).forEach(([feld, value]) => {
         if (typeof value === 'string' && !['skizze', 'skizze_basis'].includes(feld) && value.length > IMPORT_MAX_TEXT) {
             throw new Error(`Textfeld «${feld}» ist länger als ${IMPORT_MAX_TEXT} Zeichen`);
         }
     });
+}
+
+function importLeitungenNormalisieren(s) {
     const leitungen = Array.isArray(s.leitungen) ? s.leitungen.filter(v => v && typeof v === 'object') : [];
     if (leitungen.length > IMPORT_MAX_LEITUNGEN) throw new Error(`Mehr als ${IMPORT_MAX_LEITUNGEN} Leitungen`);
     leitungen.forEach((leitung, index) => Object.entries(leitung).forEach(([feld, value]) => {
         if (typeof value === 'string' && value.length > 500) throw new Error(`Leitung ${index + 1}, Feld «${feld}» ist zu lang`);
     }));
     s.leitungen = leitungen;
+}
+
+function importFotosNormalisieren(s) {
     const fotos = Array.isArray(s.fotos) ? s.fotos : [];
     if (fotos.length > IMPORT_MAX_FOTOS) throw new Error(`Mehr als ${IMPORT_MAX_FOTOS} Fotos`);
     fotos.forEach(foto => {
@@ -1117,6 +1122,9 @@ function importRecordNormalisieren(raw) {
         }
     });
     s.fotos = fotosNormalisieren(fotos);
+}
+
+function importSkizzeNormalisieren(s) {
     const strokes = Array.isArray(s.skizze_strokes) ? s.skizze_strokes : [];
     if (strokes.length > IMPORT_MAX_STRICHE) throw new Error(`Mehr als ${IMPORT_MAX_STRICHE} Skizzenstriche`);
     s.skizze_strokes = strokes;
@@ -1130,7 +1138,9 @@ function importRecordNormalisieren(raw) {
     if (Object.prototype.hasOwnProperty.call(s, 'skizze_genutzt')) {
         s.skizze_genutzt = s.skizze_genutzt === true || String(s.skizze_genutzt).toLowerCase() === 'true';
     }
-    s.formular_umfang = formularUmfangNormalisieren(s.formular_umfang);
+}
+
+function importZustandslisteNormalisieren(s) {
     if (!s.zustandsliste || typeof s.zustandsliste !== 'object' || Array.isArray(s.zustandsliste)) {
         s.zustandsliste = {};
     }
@@ -1143,6 +1153,20 @@ function importRecordNormalisieren(raw) {
             .map(value => String(value || '').trim())
             .filter(value => Object.prototype.hasOwnProperty.call(ZUSTAND_OPTION_LABELS, value));
     });
+}
+
+function importRecordNormalisieren(raw) {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+        throw new Error('Datensatz ist kein Objekt');
+    }
+    const s = { ...raw };
+    importServerFelderEntfernen(s);
+    importTextfelderPruefen(s);
+    importLeitungenNormalisieren(s);
+    importFotosNormalisieren(s);
+    importSkizzeNormalisieren(s);
+    s.formular_umfang = formularUmfangNormalisieren(s.formular_umfang);
+    importZustandslisteNormalisieren(s);
     s.schadenstufe = ['1', '2', '3', '4'].includes(String(s.schadenstufe || ''))
         ? String(s.schadenstufe)
         : '';
@@ -2733,21 +2757,31 @@ function aktionAusfuehren(action, element) {
     }
 }
 
-function zentraleEventListenerInitialisieren() {
-    const aktionSicherAusfuehren = (action, element) => {
-        Promise.resolve(aktionAusfuehren(action, element)).catch(error => {
-            console.error(`[UI] Aktion «${action}» fehlgeschlagen:`, error);
-            App.toast(`Aktion fehlgeschlagen: ${error.message || 'Unbekannter Fehler'}`, 'fehler');
-        });
-    };
-
+function zentraleKlickDelegation(aktionSicherAusfuehren) {
     document.addEventListener('click', event => {
         const actionEl = event.target.closest('[data-action]');
         if (!actionEl) return;
         event.preventDefault();
         aktionSicherAusfuehren(actionEl.dataset.action, actionEl);
     });
+}
 
+function schachtListeFokusFalle(event, panel) {
+    const fokusElemente = Array.from(panel.querySelectorAll('button, input, select, textarea, [tabindex="0"]'))
+        .filter(el => !el.disabled && !el.hidden && el.offsetParent !== null);
+    if (!fokusElemente.length) return;
+    const erstes = fokusElemente[0];
+    const letztes = fokusElemente[fokusElemente.length - 1];
+    if (event.shiftKey && document.activeElement === erstes) {
+        event.preventDefault();
+        letztes.focus();
+    } else if (!event.shiftKey && document.activeElement === letztes) {
+        event.preventDefault();
+        erstes.focus();
+    }
+}
+
+function zentraleKeydownDelegation(aktionSicherAusfuehren) {
     document.addEventListener('keydown', event => {
         const panel = document.getElementById('schachtListe');
         if (event.key === 'Escape' && panel?.classList.contains('offen')) {
@@ -2756,19 +2790,7 @@ function zentraleEventListenerInitialisieren() {
             return;
         }
         if (event.key === 'Tab' && panel?.classList.contains('offen')) {
-            const fokusElemente = Array.from(panel.querySelectorAll('button, input, select, textarea, [tabindex="0"]'))
-                .filter(el => !el.disabled && !el.hidden && el.offsetParent !== null);
-            if (fokusElemente.length) {
-                const erstes = fokusElemente[0];
-                const letztes = fokusElemente[fokusElemente.length - 1];
-                if (event.shiftKey && document.activeElement === erstes) {
-                    event.preventDefault();
-                    letztes.focus();
-                } else if (!event.shiftKey && document.activeElement === letztes) {
-                    event.preventDefault();
-                    erstes.focus();
-                }
-            }
+            schachtListeFokusFalle(event, panel);
         }
         if (!['Enter', ' '].includes(event.key)) return;
         const actionEl = event.target.closest('[data-action], [data-stift]');
@@ -2780,11 +2802,15 @@ function zentraleEventListenerInitialisieren() {
             aktionSicherAusfuehren(actionEl.dataset.action, actionEl);
         }
     });
+}
 
+function stiftKlickDelegation() {
     document.querySelectorAll('[data-stift]').forEach(el => {
         el.addEventListener('click', () => Sketch.farbwahl(el));
     });
+}
 
+function einzelfeldEventListenerRegistrieren() {
     document.getElementById('input')?.addEventListener('change', bildAuswahl);
     document.getElementById('importDateiJSON')?.addEventListener('change', event => importJSON(event.target));
     document.getElementById('koordinaten_e')?.addEventListener('input', koordinatenAktualisieren);
@@ -2796,6 +2822,19 @@ function zentraleEventListenerInitialisieren() {
     document.getElementById('entwurfSichern')?.addEventListener('click', () => {
         aktuellenEntwurfSichern().catch(() => undefined);
     });
+}
+
+function zentraleEventListenerInitialisieren() {
+    const aktionSicherAusfuehren = (action, element) => {
+        Promise.resolve(aktionAusfuehren(action, element)).catch(error => {
+            console.error(`[UI] Aktion «${action}» fehlgeschlagen:`, error);
+            App.toast(`Aktion fehlgeschlagen: ${error.message || 'Unbekannter Fehler'}`, 'fehler');
+        });
+    };
+    zentraleKlickDelegation(aktionSicherAusfuehren);
+    zentraleKeydownDelegation(aktionSicherAusfuehren);
+    stiftKlickDelegation();
+    einzelfeldEventListenerRegistrieren();
 }
 
 // ============================================================
@@ -3014,18 +3053,7 @@ function schachtListeSchliessen() {
     requestAnimationFrame(() => rueckkehr?.focus?.());
 }
 
-function schachtListenZeileErstellen(schacht) {
-    const tr = document.createElement('tr');
-    const typText = schachtTypText(schacht);
-    const bezeichnung = schacht.nummer ? `Schacht ${schacht.nummer}` : 'Schacht ohne Nummer';
-    const istAktuell = App.state.currentSchachtId === schacht.id;
-    const istAusgewaehlt = schachtAuswahl.has(schachtIdKey(schacht.id));
-    tr.dataset.schachtId = schachtIdKey(schacht.id);
-    tr.dataset.suchtext = schachtSuchtextFuer(schacht);
-    tr.dataset.geaendertAm = schacht.geaendert_am || '';
-    tr.classList.toggle('schacht-liste-aktuell', istAktuell);
-    tr.classList.toggle('schacht-liste-ausgewaehlt', istAusgewaehlt);
-
+function schachtZeileAuswahlZelle(tr, schacht, bezeichnung, istAusgewaehlt) {
     const auswahlCell = tr.insertCell(-1);
     auswahlCell.className = 'schacht-auswahl-zelle';
     auswahlCell.dataset.label = 'Auswahl';
@@ -3038,7 +3066,9 @@ function schachtListenZeileErstellen(schacht) {
     checkbox.addEventListener('change', () => schachtAuswahlAendern(schacht.id, checkbox.checked));
     auswahlLabel.appendChild(checkbox);
     auswahlCell.appendChild(auswahlLabel);
+}
 
+function schachtZeileSchachtZelle(tr, schacht, bezeichnung, istAktuell) {
     const schachtCell = tr.insertCell(-1);
     schachtCell.dataset.label = 'Schacht';
     const titel = document.createElement('strong');
@@ -3056,7 +3086,9 @@ function schachtListenZeileErstellen(schacht) {
         meta.textContent = ort;
         schachtCell.appendChild(meta);
     }
+}
 
+function schachtZeileTypUndDatumZellen(tr, schacht, typText) {
     const typCell = tr.insertCell(-1);
     typCell.className = 'schacht-meta schacht-meta--typ';
     typCell.textContent = typText;
@@ -3070,7 +3102,9 @@ function schachtListenZeileErstellen(schacht) {
     datumCell.dataset.label = 'Aufnahmedatum';
     datumCell.classList.toggle('schacht-meta--leer', !datumText);
     tr.classList.toggle('schacht-ohne-typ', !typText);
+}
 
+function schachtZeileAktionsZelle(tr, schacht) {
     const aktCell = tr.insertCell(-1);
     aktCell.className = 'schacht-aktionszelle';
     aktCell.dataset.label = 'Aktion';
@@ -3087,6 +3121,24 @@ function schachtListenZeileErstellen(schacht) {
     btnDel.setAttribute('aria-label', 'Schacht löschen');
     btnDel.addEventListener('click', () => schachtLoeschenAusListe(schacht.id));
     aktCell.append(btnLaden, btnDel);
+}
+
+function schachtListenZeileErstellen(schacht) {
+    const tr = document.createElement('tr');
+    const typText = schachtTypText(schacht);
+    const bezeichnung = schacht.nummer ? `Schacht ${schacht.nummer}` : 'Schacht ohne Nummer';
+    const istAktuell = App.state.currentSchachtId === schacht.id;
+    const istAusgewaehlt = schachtAuswahl.has(schachtIdKey(schacht.id));
+    tr.dataset.schachtId = schachtIdKey(schacht.id);
+    tr.dataset.suchtext = schachtSuchtextFuer(schacht);
+    tr.dataset.geaendertAm = schacht.geaendert_am || '';
+    tr.classList.toggle('schacht-liste-aktuell', istAktuell);
+    tr.classList.toggle('schacht-liste-ausgewaehlt', istAusgewaehlt);
+
+    schachtZeileAuswahlZelle(tr, schacht, bezeichnung, istAusgewaehlt);
+    schachtZeileSchachtZelle(tr, schacht, bezeichnung, istAktuell);
+    schachtZeileTypUndDatumZellen(tr, schacht, typText);
+    schachtZeileAktionsZelle(tr, schacht);
     return tr;
 }
 
