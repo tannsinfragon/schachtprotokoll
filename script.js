@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VERSION = window.AppConfig?.version || '2.8.10';
+const APP_VERSION = window.AppConfig?.version || '2.8.12';
 const EXPORT_SCHEMA_VERSION = window.AppConfig?.schemaVersion || 3;
 const APP_FIRMA = window.AppConfig?.company || '';
 const FOTO_MAX_KANTE = window.AppConfig?.photo?.maxEdge || 1600;
@@ -8,6 +8,7 @@ const FOTO_JPEG_QUALITAET = window.AppConfig?.photo?.jpegQuality || 0.82;
 const FOTO_MAX_ANZAHL = window.AppConfig?.photo?.maxFilesPerRecord || 20;
 const FOTO_MAX_DATEIGROESSE = window.AppConfig?.photo?.maxInputBytes || 25 * 1024 * 1024;
 const FOTO_MAX_PIXEL = window.AppConfig?.photo?.maxPixels || 40 * 1000 * 1000;
+const FOTO_MAX_AUSGABEGROESSE = window.AppConfig?.photo?.maxOutputBytes || 2 * 1024 * 1024;
 const QUOTA_WARN_RATIO = window.AppConfig?.storage?.quotaWarnRatio || 0.85;
 const IMPORT_MAX_DATEIGROESSE = window.AppConfig?.import?.maxFileBytes || 150 * 1024 * 1024;
 const IMPORT_GROSS_WARNUNG = window.AppConfig?.import?.largeFileWarningBytes || 75 * 1024 * 1024;
@@ -18,6 +19,17 @@ const IMPORT_MAX_DATA_URL = window.AppConfig?.import?.maxDataUrlChars || 15 * 10
 const IMPORT_MAX_LEITUNGEN = window.AppConfig?.import?.maxLeitungenPerRecord || 100;
 const IMPORT_MAX_STRICHE = window.AppConfig?.import?.maxStrokesPerRecord || 1000;
 const BACKUP_ERINNERUNG_TAGE = window.AppConfig?.storage?.backupReminderDays || 30;
+const SW_UPDATE_PRUEF_INTERVALL_MS = window.AppConfig?.serviceWorker?.updateCheckIntervalMs || 60 * 60 * 1000;
+
+// Gültigkeitsbereich LV95-Landeskoordinaten (Schweiz), genutzt in Validierung und Kartenlink
+const LV95_E_MIN = 2000000;
+const LV95_E_MAX = 3000000;
+const LV95_N_MIN = 1000000;
+const LV95_N_MAX = 1400000;
+function lv95KoordinatenGueltig(e, n) {
+    return Number.isFinite(e) && Number.isFinite(n) &&
+        e >= LV95_E_MIN && e <= LV95_E_MAX && n >= LV95_N_MIN && n <= LV95_N_MAX;
+}
 const EXPORT_MAX_MEDIEN_BYTES = window.AppConfig?.storage?.maxExportMediaBytes || 250 * 1024 * 1024;
 const PRINT_BILD_TIMEOUT_MS = window.AppConfig?.print?.bildWartenTimeoutMs || 20000;
 const PRINT_BILD_TIMEOUT_MS_SAMMEL = window.AppConfig?.print?.bildWartenTimeoutMsSammel || 30000;
@@ -38,6 +50,23 @@ function recordStatusNormalisieren(record, fallback = RECORD_STATUS.SAVED) {
 
 function recordIstEntwurf(record) {
     return recordStatusNormalisieren(record) === RECORD_STATUS.DRAFT;
+}
+
+// Übersetzt bekannte IndexedDB-Fehlernamen in verständliche Meldungen; setzt bei
+// vollem Speicher zusätzlich den globalen Speicherstatus. Gibt für unbekannte
+// Fehler den übergebenen Fallback-Text zurück.
+function dbFehlermeldungErmitteln(e, fallback) {
+    if (e?.name === 'QuotaExceededError') {
+        App.setStorageStatus('blocked', 'Speicher voll: JSON-Backup exportieren und Fotos reduzieren.');
+        return fallback;
+    }
+    if (e?.name === 'AbortError') {
+        return 'Speichervorgang wurde unterbrochen (z.B. durch Tab-Wechsel oder App-Update). Bitte erneut versuchen.';
+    }
+    if (e?.name === 'ConstraintError') {
+        return 'Datensatz-Konflikt in der lokalen Datenbank. Seite neu laden und erneut versuchen.';
+    }
+    return fallback;
 }
 
 function recordStatusSetzen(record, status = RECORD_STATUS.SAVED) {
@@ -74,7 +103,11 @@ const DB = (() => {
                     return;
                 }
                 _db.onclose = () => { _db = null; };
-                _db.onversionchange = () => { _db.close(); _db = null; };
+                _db.onversionchange = () => {
+                    _db.close();
+                    _db = null;
+                    App.toast('Datenbank wurde in einem anderen Tab aktualisiert. Bitte diese Seite neu laden, um Konflikte zu vermeiden.', 'warn');
+                };
                 resolve(_db);
             };
             req.onerror = e => reject(e.target.error);
@@ -222,13 +255,46 @@ const App = {
 
     _saveChain: Promise.resolve(),
 
-    toast(msg, typ = 'info') {
+    // Läuft gerade ein Undo-Toast (mit Aktion), verdrängen routinemässige Meldungen
+    // (z.B. Autosave-Erfolg) diesen nicht sofort, sondern werden zurückgestellt.
+    toast(msg, typ = 'info', aktion = null) {
         const t = appEl('toast');
         if (!t) return;
+        const jetzt = Date.now();
+        if (!aktion && App._toastAktionBisMs && jetzt < App._toastAktionBisMs) {
+            App._toastZurueckgestellt = [msg, typ, aktion];
+            return;
+        }
         t.textContent = msg;
-        t.className = `toast toast--${typ} toast--sichtbar`;
+        if (aktion) {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'toast-aktion';
+            btn.textContent = aktion.label;
+            btn.addEventListener('click', () => {
+                clearTimeout(App._toastTimer);
+                App._toastAktionBisMs = 0;
+                t.classList.remove('toast--sichtbar');
+                aktion.onClick();
+                App._toastZurueckgestelltesAnzeigen();
+            });
+            t.appendChild(btn);
+        }
+        t.className = `toast toast--${typ} toast--sichtbar${aktion ? ' toast--aktion' : ''}`;
         clearTimeout(App._toastTimer);
-        App._toastTimer = setTimeout(() => t.classList.remove('toast--sichtbar'), 3500);
+        const dauerMs = aktion ? 6000 : 3500;
+        App._toastAktionBisMs = aktion ? jetzt + dauerMs : 0;
+        App._toastTimer = setTimeout(() => {
+            t.classList.remove('toast--sichtbar');
+            App._toastAktionBisMs = 0;
+            App._toastZurueckgestelltesAnzeigen();
+        }, dauerMs);
+    },
+
+    _toastZurueckgestelltesAnzeigen() {
+        const naechster = App._toastZurueckgestellt;
+        App._toastZurueckgestellt = null;
+        if (naechster) App.toast(...naechster);
     },
 
     setStatus(msg) {
@@ -350,12 +416,10 @@ const App = {
             return true;
         } catch (e) {
             console.error('[DB] Auto-Save Fehler:', e);
-            if (e?.name === 'QuotaExceededError') {
-                App.setStorageStatus('blocked', 'Speicher voll: JSON-Backup exportieren und Fotos reduzieren.');
-            }
-            App.toast('Speichern fehlgeschlagen: ' + e.message, 'fehler');
+            const meldung = dbFehlermeldungErmitteln(e, `Speichern fehlgeschlagen: ${e.message}`);
+            App.toast(meldung, 'fehler');
             App.setStatus('Nicht gespeichert - Fehler');
-            App.speicherfehlerAnzeigen(`Speichern fehlgeschlagen: ${e.message}`);
+            App.speicherfehlerAnzeigen(meldung);
             return false;
         }
     }
@@ -1326,7 +1390,7 @@ const Schacht = (() => {
     }
 
     function _leitungenAusTabelle() {
-        return Array.from(document.querySelectorAll('#tblleitungen tbody tr')).map(r => {
+        return Array.from(document.querySelectorAll('#tblleitungen tbody tr:not(.zeile--geloescht)')).map(r => {
             const ltg = JSON.parse(r.dataset.ltg || '{}');
             ltg.nr = r.cells[0].textContent;
             return ltg;
@@ -1458,8 +1522,8 @@ const Schacht = (() => {
         const e = _zahl(data.koordinaten_e);
         const n = _zahl(data.koordinaten_n);
         if (e !== null || n !== null) {
-            if (!Number.isFinite(e) || e < 2000000 || e > 3000000) add('koordinaten_e', 'LV95-Koordinate E ist ungültig');
-            if (!Number.isFinite(n) || n < 1000000 || n > 1400000) add('koordinaten_n', 'LV95-Koordinate N ist ungültig');
+            if (!Number.isFinite(e) || e < LV95_E_MIN || e > LV95_E_MAX) add('koordinaten_e', 'LV95-Koordinate E ist ungültig');
+            if (!Number.isFinite(n) || n < LV95_N_MIN || n > LV95_N_MAX) add('koordinaten_n', 'LV95-Koordinate N ist ungültig');
         }
 
         (data.leitungen || []).forEach((leitung, index) => {
@@ -1477,6 +1541,8 @@ const Schacht = (() => {
             el.classList.remove('fehler');
             el.removeAttribute('data-fachfehler');
             el.setCustomValidity?.('');
+            el.title = '';
+            el.parentElement?.querySelector('.feld-fehlermeldung')?.remove();
         });
         fehler.forEach(({ feld, meldung }) => {
             const el = feld ? document.getElementById(feld) : null;
@@ -1485,6 +1551,10 @@ const Schacht = (() => {
             el.dataset.fachfehler = 'true';
             el.setCustomValidity?.(meldung);
             el.title = meldung;
+            const hinweis = document.createElement('p');
+            hinweis.className = 'feld-fehlermeldung';
+            hinweis.textContent = `⚠ ${meldung}`;
+            el.insertAdjacentElement('afterend', hinweis);
         });
     }
 
@@ -1566,6 +1636,27 @@ const Schacht = (() => {
         }
     }
 
+    function _leitungLoeschenMitUndo(row) {
+        row.classList.add('zeile--geloescht');
+        UIFeedback.leitungenAktualisieren();
+        App.triggerAutoSave();
+        let rueckgaengig = false;
+        App.toast('Leitung entfernt.', 'info', {
+            label: 'Rückgängig',
+            onClick: () => {
+                rueckgaengig = true;
+                row.classList.remove('zeile--geloescht');
+                UIFeedback.leitungenAktualisieren();
+                App.triggerAutoSave();
+            }
+        });
+        setTimeout(() => {
+            if (rueckgaengig || !row.isConnected) return;
+            row.remove();
+            UIFeedback.leitungenAktualisieren();
+        }, 6000);
+    }
+
     function _insertLeitungRow(ltg) {
         const tbody = document.querySelector('#tblleitungen tbody');
         const row = tbody.insertRow(-1);
@@ -1624,15 +1715,17 @@ const Schacht = (() => {
         del.type = 'button';
         del.className = 'btn-loeschen btn-klein';
         del.textContent = 'Löschen';
-        del.addEventListener('click', async () => {
-            if (await bestaetigen('Leitung löschen?')) {
-                del.closest('tr').remove();
-                UIFeedback.leitungenAktualisieren();
-                App.triggerAutoSave();
-            }
-        });
+        del.addEventListener('click', () => _leitungLoeschenMitUndo(row));
         delCell.appendChild(del);
         if (typeof UIFeedback !== 'undefined') UIFeedback.leitungenAktualisieren();
+    }
+
+    function ersterFehlerFokussieren(fehler) {
+        const erste = fehler.find(f => f.feld);
+        const el = erste ? document.getElementById(erste.feld) : null;
+        if (!el) return;
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        el.focus({ preventScroll: true });
     }
 
     return {
@@ -1645,6 +1738,7 @@ const Schacht = (() => {
         gesamtzustandGeaendert,
         validieren,
         validierungsfehlerAnzeigen,
+        ersterFehlerFokussieren,
         _insertLeitungRow,
         PFLICHTFELDER,
         DIALOG_FELDER
@@ -1670,7 +1764,7 @@ const UIFeedback = (() => {
         const tbody = document.querySelector('#tblleitungen tbody');
         const leer = document.getElementById('leitungenLeer');
         const tabelle = document.getElementById('tblleitungen');
-        const count = tbody?.querySelectorAll('tr').length || 0;
+        const count = tbody?.querySelectorAll('tr:not(.zeile--geloescht)').length || 0;
         if (leer) leer.hidden = count > 0;
         if (tabelle) tabelle.classList.toggle('tabelle-hat-eintraege', count > 0);
     }
@@ -1678,7 +1772,7 @@ const UIFeedback = (() => {
     function medienAktualisieren() {
         const container = document.getElementById('fotos');
         if (!container) return;
-        const count = container.children.length;
+        const count = container.querySelectorAll('.foto-wrapper:not(.foto-wrapper--geloescht)').length;
         container.dataset.count = String(count);
         container.classList.toggle('fotos-container--leer', count === 0);
         const zaehler = document.getElementById('fotoZaehler');
@@ -1736,6 +1830,13 @@ function serviceWorkerRegistrieren() {
                 worker?.addEventListener('statechange', () => {
                     if (worker.state === 'installed') updateAnzeigen(worker);
                 });
+            });
+            // Lange offene Tabs (typisch im Aussendienst) erkennen neue Releases sonst
+            // erst nach vollständigem Reload - deshalb periodisch und bei Tab-Rückkehr prüfen.
+            const pruefen = () => registration.update().catch(() => undefined);
+            setInterval(pruefen, SW_UPDATE_PRUEF_INTERVALL_MS);
+            document.addEventListener('visibilitychange', () => {
+                if (document.visibilityState === 'visible') pruefen();
             });
         })
         .catch(e => console.error('[App] Service Worker Fehler:', e));
@@ -1838,11 +1939,9 @@ async function neuerSchacht() {
         App.toast('Neuer Schacht als Entwurf gespeichert', 'success');
     } catch (error) {
         console.error('Neuen Schacht nicht speichern:', error);
-        if (error?.name === 'QuotaExceededError') {
-            App.setStorageStatus('blocked', 'Speicher voll: JSON-Backup exportieren und Fotos reduzieren.');
-        }
-        App.speicherfehlerAnzeigen(`Neuer Schacht konnte nicht gespeichert werden: ${error.message || 'Unbekannter Fehler'}`);
-        App.toast('Neuer Schacht konnte nicht gespeichert werden.', 'fehler');
+        const meldung = dbFehlermeldungErmitteln(error, `Neuer Schacht konnte nicht gespeichert werden: ${error.message || 'Unbekannter Fehler'}`);
+        App.speicherfehlerAnzeigen(meldung);
+        App.toast(meldung, 'fehler');
     }
 }
 
@@ -1851,7 +1950,7 @@ function kopfzeile() {
     const datum = new Date().toLocaleDateString('de-CH');
     const firmakopf = document.getElementById('firmakopf');
     if (firmakopf) firmakopf.textContent = `${visum} / ${datum}`;
-    geoLocalisation();
+    kartenlinkAktualisieren();
 }
 
 const PRINT_FELDER = {
@@ -2091,7 +2190,10 @@ async function printpdf() {
     const liveData = Schacht.sammeln();
     const prueffehler = Schacht.validieren(liveData);
     Schacht.validierungsfehlerAnzeigen(prueffehler);
-    if (prueffehler.length && !await bestaetigen(`${prueffehler.length} Prüfhinweis${prueffehler.length !== 1 ? 'e' : ''} vorhanden. PDF trotzdem erstellen?`)) return;
+    if (prueffehler.length) {
+        Schacht.ersterFehlerFokussieren(prueffehler);
+        if (!await bestaetigen(`${prueffehler.length} Prüfhinweis${prueffehler.length !== 1 ? 'e' : ''} vorhanden. PDF trotzdem erstellen?`)) return;
+    }
     document.querySelectorAll('select').forEach(sel => sel.classList.toggle('wert-gewaehlt', sel.value !== ''));
     const dateInputs = document.querySelectorAll('input[type="date"]');
     dateInputs.forEach(el => {
@@ -2152,6 +2254,7 @@ async function exportRecordsVorbereiten(records) {
 }
 
 async function exportAllePDF(records = null) {
+    const vorherigerStatus = appEl('statusbar-text')?.textContent || '';
     try {
         if (!await App.aenderungenSpeichern()) return;
 
@@ -2165,7 +2268,10 @@ async function exportAllePDF(records = null) {
         const titleEl = document.querySelector('title');
         const alterTitel = titleEl?.textContent || 'Schachtprotokoll';
         printSummaryAlleErstellen(alle);
+        App.toast(`${alle.length} Schacht${alle.length !== 1 ? 'e' : ''} werden für den PDF-Druck vorbereitet.`, 'info');
+        App.setStatus(`PDF wird vorbereitet … ${fotoAnzahl} Foto${fotoAnzahl !== 1 ? 's' : ''} werden geladen`);
         await warteAufDruckbilder(document.getElementById('printSummary'), PRINT_BILD_TIMEOUT_MS_SAMMEL);
+        App.setStatus('PDF wird gedruckt …');
 
         let bereinigt = false;
         const cleanup = () => {
@@ -2173,15 +2279,16 @@ async function exportAllePDF(records = null) {
             bereinigt = true;
             printSummaryEntfernen();
             if (titleEl) titleEl.textContent = alterTitel;
+            App.setStatus(vorherigerStatus);
             window.removeEventListener('afterprint', cleanup);
         };
         window.addEventListener('afterprint', cleanup);
-        App.toast(`${alle.length} Schacht${alle.length !== 1 ? 'e' : ''} werden für den PDF-Druck vorbereitet.`, 'info');
         if (titleEl) titleEl.textContent = `Schachtprotokolle_alle_${dateiDatum()}`;
         window.print();
         setTimeout(cleanup, PRINT_CLEANUP_TIMEOUT_MS);
     } catch (e) {
         printSummaryEntfernen();
+        App.setStatus(vorherigerStatus);
         App.toast('PDF-Export fehlgeschlagen: ' + e.message, 'fehler');
     }
 }
@@ -2442,6 +2549,9 @@ async function importJSON(input) {
         if (daten?.schema_version && Number(daten.schema_version) > EXPORT_SCHEMA_VERSION) {
             throw new Error(`Schema-Version ${daten.schema_version} wird nicht unterstützt`);
         }
+        if (daten?.schema_version && Number(daten.schema_version) < EXPORT_SCHEMA_VERSION) {
+            if (!await bestaetigen(`Die Datei stammt von einer älteren Schema-Version (${daten.schema_version} statt ${EXPORT_SCHEMA_VERSION}). Einzelne Felder könnten fehlen oder anders benannt sein. Trotzdem importieren?`)) return;
+        }
         const records = jsonImportRecords(daten);
         const bezeichnung = records.length === 1 ? '1 Datensatz' : `${records.length} Datensätze`;
         const schluessel = records.map(datensatzSchluessel).filter(Boolean);
@@ -2499,7 +2609,7 @@ function updateAuftrag() {
     });
 }
 
-function geoLocalisation() {
+function kartenlinkAktualisieren() {
     const el = document.getElementById('karte');
     if (!el) return;
     const e = document.getElementById('koordinaten_e')?.value.trim();
@@ -2518,8 +2628,7 @@ function koordinatenAktualisieren() {
     if (!el) return;
     const eZahl = Number(e);
     const nZahl = Number(n);
-    const gueltig = Number.isFinite(eZahl) && Number.isFinite(nZahl) &&
-        eZahl >= 2000000 && eZahl <= 3000000 && nZahl >= 1000000 && nZahl <= 1400000;
+    const gueltig = lv95KoordinatenGueltig(eZahl, nZahl);
     if (gueltig) {
         el.href = `https://map.geo.admin.ch/?E=${encodeURIComponent(e)}&N=${encodeURIComponent(n)}&zoom=10`;
         el.removeAttribute('aria-disabled');
@@ -2530,7 +2639,6 @@ function koordinatenAktualisieren() {
         el.title = e || n ? 'LV95-Koordinaten sind unvollständig oder ungültig' : 'LV95-Koordinaten erfassen';
     }
 }
-
 
 function fotoFitAktualisieren() {
     UIFeedback.medienAktualisieren();
@@ -2552,21 +2660,14 @@ function bildElementAusDatei(file) {
     });
 }
 
-async function fotoDateiKomprimieren(file) {
-    if (file.size > FOTO_MAX_DATEIGROESSE) throw new Error('Foto ist zu gross');
-    const img = await bildElementAusDatei(file);
-    if (img.naturalWidth * img.naturalHeight > FOTO_MAX_PIXEL) throw new Error('Foto hat zu viele Bildpunkte');
-    const ratio = Math.min(1, FOTO_MAX_KANTE / Math.max(img.naturalWidth, img.naturalHeight));
-    const width = Math.max(1, Math.round(img.naturalWidth * ratio));
-    const height = Math.max(1, Math.round(img.naturalHeight * ratio));
-    const canvas = document.createElement('canvas');
-    canvas.width = width;
-    canvas.height = height;
-    const ctx = canvas.getContext('2d');
-    ctx.drawImage(img, 0, 0, width, height);
+function _canvasAlsBlob(canvas, ctx, img, breite, hoehe, qualitaet) {
+    canvas.width = breite;
+    canvas.height = hoehe;
+    ctx.clearRect(0, 0, breite, hoehe);
+    ctx.drawImage(img, 0, 0, breite, hoehe);
     return new Promise((resolve, reject) => {
         if (typeof canvas.toBlob !== 'function') {
-            const fallback = dataUrlZuBlob(canvas.toDataURL('image/jpeg', FOTO_JPEG_QUALITAET));
+            const fallback = dataUrlZuBlob(canvas.toDataURL('image/jpeg', qualitaet));
             fallback ? resolve(fallback) : reject(new Error('Foto konnte nicht komprimiert werden'));
             return;
         }
@@ -2576,8 +2677,33 @@ async function fotoDateiKomprimieren(file) {
             } else {
                 reject(new Error('Foto konnte nicht komprimiert werden'));
             }
-        }, 'image/jpeg', FOTO_JPEG_QUALITAET);
+        }, 'image/jpeg', qualitaet);
     });
+}
+
+async function fotoDateiKomprimieren(file) {
+    if (file.size > FOTO_MAX_DATEIGROESSE) throw new Error('Foto ist zu gross');
+    const img = await bildElementAusDatei(file);
+    if (img.naturalWidth * img.naturalHeight > FOTO_MAX_PIXEL) throw new Error('Foto hat zu viele Bildpunkte');
+    const ratio = Math.min(1, FOTO_MAX_KANTE / Math.max(img.naturalWidth, img.naturalHeight));
+    let width = Math.max(1, Math.round(img.naturalWidth * ratio));
+    let height = Math.max(1, Math.round(img.naturalHeight * ratio));
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+
+    let qualitaet = FOTO_JPEG_QUALITAET;
+    let blob = await _canvasAlsBlob(canvas, ctx, img, width, height, qualitaet);
+    // Reicht die Qualitätsreduktion nicht aus, zusätzlich die Kantenlänge schrittweise verkleinern
+    for (let versuch = 0; versuch < 4 && blob.size > FOTO_MAX_AUSGABEGROESSE; versuch++) {
+        if (qualitaet > 0.4) {
+            qualitaet = Math.max(0.4, qualitaet - 0.15);
+        } else {
+            width = Math.max(1, Math.round(width * 0.85));
+            height = Math.max(1, Math.round(height * 0.85));
+        }
+        blob = await _canvasAlsBlob(canvas, ctx, img, width, height, qualitaet);
+    }
+    return blob;
 }
 
 function objektUrlFreigeben(root) {
@@ -2595,9 +2721,32 @@ function fotosLeeren() {
 }
 
 function fotosAusFormular() {
-    return Array.from(document.querySelectorAll('#fotos .foto-wrapper img'))
+    return Array.from(document.querySelectorAll('#fotos .foto-wrapper:not(.foto-wrapper--geloescht) img'))
         .map(img => img._fotoBlob || null)
         .filter(Boolean);
+}
+
+function fotoLoeschenMitUndo(wrapper) {
+    wrapper.classList.add('foto-wrapper--geloescht');
+    wrapper.hidden = true;
+    fotoFitAktualisieren();
+    App.triggerAutoSave();
+    let rueckgaengig = false;
+    App.toast('Foto entfernt.', 'info', {
+        label: 'Rückgängig',
+        onClick: () => {
+            rueckgaengig = true;
+            wrapper.hidden = false;
+            wrapper.classList.remove('foto-wrapper--geloescht');
+            fotoFitAktualisieren();
+            App.triggerAutoSave();
+        }
+    });
+    setTimeout(() => {
+        if (rueckgaengig || !wrapper.isConnected) return;
+        objektUrlFreigeben(wrapper);
+        wrapper.remove();
+    }, 6000);
 }
 
 function fotoHinzufuegen(foto) {
@@ -2617,13 +2766,8 @@ function fotoHinzufuegen(foto) {
     btn.className = 'foto-loeschen';
     btn.textContent = '✕';
     btn.title = 'Foto entfernen';
-    btn.addEventListener('click', async () => {
-        if (!await bestaetigen('Foto löschen?')) return;
-        objektUrlFreigeben(wrapper);
-        wrapper.remove();
-        fotoFitAktualisieren();
-        App.triggerAutoSave();
-    });
+    btn.setAttribute('aria-label', 'Foto entfernen');
+    btn.addEventListener('click', () => fotoLoeschenMitUndo(wrapper));
     wrapper.append(img, btn);
     container.appendChild(wrapper);
     fotoFitAktualisieren();
@@ -2634,7 +2778,7 @@ async function bildAuswahl() {
     const files = Array.from(input?.files || []);
     if (!files.length) return;
     input.value = '';
-    const vorhandeneFotos = document.querySelectorAll('#fotos .foto-wrapper').length;
+    const vorhandeneFotos = document.querySelectorAll('#fotos .foto-wrapper:not(.foto-wrapper--geloescht)').length;
     const freiePlaetze = Math.max(0, FOTO_MAX_ANZAHL - vorhandeneFotos);
     if (freiePlaetze === 0) {
         App.toast(`Maximal ${FOTO_MAX_ANZAHL} Fotos pro Schacht.`, 'warn');
@@ -2836,12 +2980,20 @@ function stiftKlickDelegation() {
     });
 }
 
+function debounce(fn, wartezeitMs) {
+    let timer;
+    return (...args) => {
+        clearTimeout(timer);
+        timer = setTimeout(() => fn(...args), wartezeitMs);
+    };
+}
+
 function einzelfeldEventListenerRegistrieren() {
     document.getElementById('input')?.addEventListener('change', bildAuswahl);
     document.getElementById('importDateiJSON')?.addEventListener('change', event => importJSON(event.target));
     document.getElementById('koordinaten_e')?.addEventListener('input', koordinatenAktualisieren);
     document.getElementById('koordinaten_n')?.addEventListener('input', koordinatenAktualisieren);
-    document.getElementById('schachtSuche')?.addEventListener('input', schachtListeFiltern);
+    document.getElementById('schachtSuche')?.addEventListener('input', debounce(schachtListeFiltern, 150));
     document.getElementById('schachtAlleSichtbar')?.addEventListener('change', event => schachtAlleSichtbarenAuswaehlen(event.target.checked));
     document.getElementById('schachtAuswahlLoeschen')?.addEventListener('click', schachtAuswahlLoeschen);
     document.getElementById('speichernWiederholen')?.addEventListener('click', () => App.aenderungenSpeichern());
@@ -2851,11 +3003,18 @@ function einzelfeldEventListenerRegistrieren() {
 }
 
 function zentraleEventListenerInitialisieren() {
+    // Verhindert, dass Doppelklick/Doppel-Tap dieselbe Aktion (z.B. PDF-Export,
+    // Alle-Schächte-löschen) parallel ein zweites Mal auslöst.
+    const laufendeAktionen = new Set();
     const aktionSicherAusfuehren = (action, element) => {
-        Promise.resolve(aktionAusfuehren(action, element)).catch(error => {
-            console.error(`[UI] Aktion «${action}» fehlgeschlagen:`, error);
-            App.toast(`Aktion fehlgeschlagen: ${error.message || 'Unbekannter Fehler'}`, 'fehler');
-        });
+        if (laufendeAktionen.has(action)) return;
+        laufendeAktionen.add(action);
+        Promise.resolve(aktionAusfuehren(action, element))
+            .catch(error => {
+                console.error(`[UI] Aktion «${action}» fehlgeschlagen:`, error);
+                App.toast(`Aktion fehlgeschlagen: ${error.message || 'Unbekannter Fehler'}`, 'fehler');
+            })
+            .finally(() => laufendeAktionen.delete(action));
     };
     zentraleKlickDelegation(aktionSicherAusfuehren);
     zentraleKeydownDelegation(aktionSicherAusfuehren);

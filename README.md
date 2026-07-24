@@ -147,7 +147,7 @@ Nach Änderungen an gecachten Dateien muss der Cache-Name in `serviceworker.js` 
 Aktuelle App-Version:
 
 ```text
-2.8.10
+2.8.12
 ```
 
 Die Version ist in `assets/js/app-config.js`, als Fallback in `script.js` und im Cache-Namen von `serviceworker.js` referenziert.

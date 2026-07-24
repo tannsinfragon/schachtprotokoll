@@ -1,14 +1,22 @@
-// Schachtprotokoll Service Worker v2.8.10
+// Schachtprotokoll Service Worker v2.8.12
 const CACHE_PREFIX = 'schachtprotokoll-';
-const CACHE_NAME = `${CACHE_PREFIX}2.8.10`;
+const CACHE_NAME = `${CACHE_PREFIX}2.8.12`;
 
+// Ohne diese Dateien ist die Seite offline nicht funktionsfähig - schlägt eine
+// davon fehl, bricht die Installation komplett ab (Fehler wird sichtbar statt
+// dass die App auf einem halb-gecachten Stand hängen bleibt).
 const CORE_ASSETS = [
     './',
     './index.html',
+    './assets/js/app-config.js?v=2.8.12',
+    './script.js?v=2.8.12'
+];
+
+// Verbessern die Darstellung/Funktion, ohne die App unbenutzbar zu machen -
+// fehlt eine davon, wird nur gewarnt statt die ganze Installation abzubrechen.
+const DEGRADIERBARE_ASSETS = [
     './schacht.css',
-    './assets/js/app-config.js?v=2.8.10',
-    './assets/vendor/zip-writer.js?v=2.8.10',
-    './script.js?v=2.8.10',
+    './assets/vendor/zip-writer.js?v=2.8.12',
     './manifest.json',
     './assets/logo.png'
 ];
@@ -32,6 +40,9 @@ self.addEventListener('install', event => {
     event.waitUntil(
         caches.open(CACHE_NAME).then(async cache => {
             await cache.addAll(CORE_ASSETS);
+            await Promise.all(DEGRADIERBARE_ASSETS.map(asset =>
+                cache.add(asset).catch(error => console.warn('[SW] Asset nicht gecacht:', asset, error))
+            ));
             await Promise.all(OPTIONAL_ASSETS.map(asset =>
                 cache.add(asset).catch(error => console.warn('[SW] Optionales Asset nicht gecacht:', asset, error))
             ));

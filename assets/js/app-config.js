@@ -1,7 +1,7 @@
 'use strict';
 
 window.AppConfig = Object.freeze({
-    version: '2.8.10',
+    version: '2.8.12',
     schemaVersion: 3,
     company: '',
     photo: Object.freeze({
@@ -9,7 +9,8 @@ window.AppConfig = Object.freeze({
         jpegQuality: 0.82,
         maxFilesPerRecord: 20,
         maxInputBytes: 25 * 1024 * 1024,
-        maxPixels: 40 * 1000 * 1000
+        maxPixels: 40 * 1000 * 1000,
+        maxOutputBytes: 2 * 1024 * 1024
     }),
     import: Object.freeze({
         maxFileBytes: 150 * 1024 * 1024,
@@ -34,5 +35,8 @@ window.AppConfig = Object.freeze({
     }),
     export: Object.freeze({
         dateinameMaxZeichen: 80
+    }),
+    serviceWorker: Object.freeze({
+        updateCheckIntervalMs: 60 * 60 * 1000
     })
 });
